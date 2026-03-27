@@ -88,6 +88,39 @@ function unparent(el){
   var a=getAbsPos(el);el.x=a.x;el.y=a.y;el.rot=a.rot;el.parentId=null;
   renderEl(el);renderHier();toast('🔓 Unparented');
 }
+
+// Lấy parent của el (null nếu root)
+function getParentId(el){ return el.parentId||null; }
+
+// Tính vị trí tương đối khi set parent mới
+function setParent(dragged, newParentId){
+  // Unparent cũ trước
+  if(dragged.parentId){
+    var abs=getAbsPos(dragged);
+    dragged.x=abs.x;dragged.y=abs.y;dragged.rot=abs.rot||0;
+    dragged.parentId=null;
+  }
+  if(!newParentId){ return; } // chỉ unparent, không set parent mới
+  var par=getEl(newParentId);
+  if(!par)return;
+  dragged.parentId=newParentId;
+  var pa=getAbsPos(par),pcx=pa.x+par.w/2,pcy=pa.y+par.h/2;
+  dragged.x=dragged.x-pcx+dragged.w/2;
+  dragged.y=dragged.y-pcy+dragged.h/2;
+}
+
+// Reorder: di chuyển dragged vào đúng vị trí trong mảng els (trước/sau target)
+function reorderEl(draggedId, targetId, position){
+  // position: 'before' | 'after'
+  var di=els.findIndex(function(e){return e.id===draggedId;});
+  var ti=els.findIndex(function(e){return e.id===targetId;});
+  if(di<0||ti<0||di===ti)return;
+  var dragged=els.splice(di,1)[0];
+  ti=els.findIndex(function(e){return e.id===targetId;}); // tìm lại sau splice
+  if(position==='after')ti++;
+  els.splice(ti,0,dragged);
+}
+
 function tryReparent(drag){
   if(!drag)return;
   var dcx=drag.x+drag.w/2,dcy=drag.y+drag.h/2,best=null,bestA=0;
@@ -99,9 +132,7 @@ function tryReparent(drag){
     }
   });
   if(best&&best.id!==drag.parentId){
-    drag.parentId=best.id;
-    var pa=getAbsPos(best),pcx=pa.x+best.w/2,pcy=pa.y+best.h/2;
-    drag.x=drag.x-pcx+drag.w/2;drag.y=drag.y-pcy+drag.h/2;
+    setParent(drag,best.id);
     toast('📦 Parented to '+best.name);renderHier();
   }
 }
@@ -326,16 +357,57 @@ function undo(){
 }
 
 // §13 HIERARCHY (drag-drop như Roblox Studio)
+// State cho drag trong hierarchy
+var _hDragId=null;       // id đang kéo
+var _hOverId=null;       // id đang hover
+var _hPos=null;          // 'before'|'inside'|'after'
+var _hPlaceholder=null;  // div placeholder
+
+function _removePlaceholder(){
+  if(_hPlaceholder&&_hPlaceholder.parentNode)_hPlaceholder.parentNode.removeChild(_hPlaceholder);
+  _hPlaceholder=null;
+}
+
+function _makePlaceholder(depth,label){
+  var ph=document.createElement('div');
+  ph.id='hier-ph';
+  ph.style.cssText='height:3px;margin:1px 0;border-radius:2px;background:var(--ac);opacity:.85;pointer-events:none;transition:all .1s;';
+  ph.style.marginLeft=(7+depth*14)+'px';
+  if(label){
+    var lb=document.createElement('div');
+    lb.style.cssText='position:absolute;left:'+(14+depth*14)+'px;top:-8px;font-size:8px;color:var(--ac);font-weight:700;pointer-events:none;font-family:monospace;';
+    lb.textContent=label;
+    // không append label vào ph vì ph là inline
+  }
+  return ph;
+}
+
 function renderHier(){
-  var list=document.getElementById('elist');list.innerHTML='';
+  var list=document.getElementById('elist');
+  list.innerHTML='';
   document.getElementById('eemp').style.display=els.length?'none':'block';
 
-  function renderNode(el,depth){
-    var c=COL[el.type]||'#888',kids=getChildren(el.id);
+  // Flat list theo thứ tự render (DFS)
+  var flatNodes=[]; // [{el, depth}]
+  function collectNodes(el,depth){
+    flatNodes.push({el:el,depth:depth});
+    getChildren(el.id).forEach(function(c){collectNodes(c,depth+1);});
+  }
+  els.filter(function(e){return!e.parentId;}).forEach(function(el){collectNodes(el,0);});
+
+  flatNodes.forEach(function(node,idx){
+    var el=node.el,depth=node.depth;
+    var c=COL[el.type]||'#888';
+    var kids=getChildren(el.id);
+
     var d=document.createElement('div');
     d.className='el-item'+(el.id===sel?' on':'');
-    d.dataset.id=el.id;d.draggable=true;
+    d.dataset.id=el.id;
+    d.dataset.depth=depth;
+    d.draggable=true;
     d.style.paddingLeft=(7+depth*14)+'px';
+    d.style.transition='transform .12s, opacity .12s';
+
     d.innerHTML=
       '<div class="el-ic" style="background:'+c+'22;color:'+c+'">▪</div>'+
       (depth?'<span style="color:var(--tx3);font-size:9px;margin-right:2px">⊂</span>':'')+
@@ -344,60 +416,185 @@ function renderHier(){
       (kids.length?'<span style="color:var(--cy);font-size:8px;margin-left:2px">⊃'+kids.length+'</span>':'')+
       (el.parentId?'<span class="hier-unpar" onclick="event.stopPropagation();unparent(getEl(\''+el.id+'\'));renderEl(getEl(\''+el.id+'\'));renderProps()" title="Unparent">✕</span>':'');
 
-    d.onclick=function(e){if(!e.target.classList.contains('hier-unpar')){selEl(el.id);lTab(1);}};
+    d.onclick=function(e){
+      if(!e.target.classList.contains('hier-unpar')){selEl(el.id);lTab(1);}
+    };
 
+    // ── DRAG START ──
     d.ondragstart=function(e){
-      hierDrag=el.id;e.dataTransfer.effectAllowed='move';
-      setTimeout(function(){d.style.opacity='0.4';},0);
+      _hDragId=el.id;
+      e.dataTransfer.effectAllowed='move';
+      setTimeout(function(){d.style.opacity='0.35';},0);
     };
+
+    // ── DRAG END ──
     d.ondragend=function(){
-      hierDrag=null;d.style.opacity='';
-      list.querySelectorAll('.hier-over').forEach(function(n){n.classList.remove('hier-over');});
+      _hDragId=null;_hOverId=null;_hPos=null;
+      d.style.opacity='';
+      _removePlaceholder();
+      // Xóa highlight tất cả
+      list.querySelectorAll('.el-item').forEach(function(n){
+        n.classList.remove('hier-over','hier-insert-before','hier-insert-after');
+        n.style.transform='';
+      });
     };
+
+    // ── DRAG OVER ──
     d.ondragover=function(e){
       e.preventDefault();
-      if(!hierDrag||hierDrag===el.id||isAncestor(el.id,hierDrag))return;
+      if(!_hDragId||_hDragId===el.id||isAncestor(el.id,_hDragId))return;
       e.dataTransfer.dropEffect='move';
-      list.querySelectorAll('.hier-over').forEach(function(n){n.classList.remove('hier-over');});
-      d.classList.add('hier-over');
+
+      var rect=d.getBoundingClientRect();
+      var relY=e.clientY-rect.top;
+      var pct=relY/rect.height;
+
+      // Xác định vùng: 25% trên = before, 50% giữa = inside, 25% dưới = after
+      var newPos;
+      if(pct<0.25) newPos='before';
+      else if(pct>0.75) newPos='after';
+      else newPos='inside';
+
+      if(_hOverId===el.id&&_hPos===newPos)return; // không re-render nếu không đổi
+      _hOverId=el.id;_hPos=newPos;
+
+      // Xóa highlight cũ
+      list.querySelectorAll('.el-item').forEach(function(n){
+        n.classList.remove('hier-over','hier-insert-before','hier-insert-after');
+      });
+      _removePlaceholder();
+
+      if(newPos==='inside'){
+        // Highlight frame đích màu tím nhạt
+        d.classList.add('hier-over');
+        // Thêm placeholder thụt vào bên dưới item này (như child đầu tiên)
+        var ph=_makePlaceholder(depth+1);
+        ph.style.marginLeft=(14+(depth+1)*14)+'px';
+        ph.style.height='18px';
+        ph.style.background='rgba(124,106,247,0.18)';
+        ph.style.border='1px dashed var(--ac)';
+        ph.style.borderRadius='4px';
+        ph.style.marginRight='6px';
+        // Chèn sau d
+        if(d.nextSibling)list.insertBefore(ph,d.nextSibling);
+        else list.appendChild(ph);
+        _hPlaceholder=ph;
+      } else {
+        // Placeholder là đường kẻ ngang mỏng
+        var ph=_makePlaceholder(depth);
+        if(newPos==='before'){
+          d.classList.add('hier-insert-before');
+          list.insertBefore(ph,d);
+        } else {
+          d.classList.add('hier-insert-after');
+          // Chèn sau tất cả children của el (nếu có)
+          var lastChild=d;
+          var allItems=list.querySelectorAll('.el-item');
+          var found=false;
+          allItems.forEach(function(item){
+            if(found&&parseInt(item.dataset.depth||0)>depth)lastChild=item;
+            else if(found)found=false;
+            if(item===d)found=true;
+          });
+          if(lastChild.nextSibling)list.insertBefore(ph,lastChild.nextSibling);
+          else list.appendChild(ph);
+        }
+        _hPlaceholder=ph;
+      }
     };
-    d.ondragleave=function(){d.classList.remove('hier-over');};
+
+    d.ondragleave=function(e){
+      // Chỉ clear nếu thật sự rời khỏi item (không phải sang child)
+      if(!d.contains(e.relatedTarget)){
+        d.classList.remove('hier-over','hier-insert-before','hier-insert-after');
+      }
+    };
+
+    // ── DROP ──
     d.ondrop=function(e){
-      e.preventDefault();d.classList.remove('hier-over');
-      if(!hierDrag||hierDrag===el.id||isAncestor(el.id,hierDrag))return;
-      var dragged=getEl(hierDrag);if(!dragged)return;
+      e.preventDefault();e.stopPropagation();
+      d.classList.remove('hier-over','hier-insert-before','hier-insert-after');
+      _removePlaceholder();
+      if(!_hDragId||_hDragId===el.id||isAncestor(el.id,_hDragId))return;
+
+      var dragged=getEl(_hDragId);
+      if(!dragged)return;
       saveH();
-      // Unparent cũ trước
-      if(dragged.parentId){var abs=getAbsPos(dragged);dragged.x=abs.x;dragged.y=abs.y;dragged.rot=abs.rot||0;dragged.parentId=null;}
-      // Set parent mới
-      dragged.parentId=el.id;
-      var pa=getAbsPos(el),pcx=pa.x+el.w/2,pcy=pa.y+el.h/2;
-      dragged.x=dragged.x-pcx+dragged.w/2;dragged.y=dragged.y-pcy+dragged.h/2;
-      renderEl(dragged);getDescendants(dragged.id).forEach(renderEl);
-      renderHier();renderProps();toast('📦 '+dragged.name+' → '+el.name);
+
+      if(_hPos==='inside'){
+        // Reparent vào trong el
+        setParent(dragged,el.id);
+        toast('📦 '+dragged.name+' → '+el.name);
+      } else {
+        // Reorder: đưa về cùng cấp với el (cùng parentId)
+        setParent(dragged, el.parentId||null);
+        reorderEl(dragged.id, el.id, _hPos);
+        toast('↕ Reordered: '+dragged.name);
+      }
+
+      renderEl(dragged);
+      getDescendants(dragged.id).forEach(renderEl);
+      renderHier();renderProps();
+      _hDragId=null;_hOverId=null;_hPos=null;
     };
 
     list.appendChild(d);
 
     // Mods dưới element
     Object.keys(el.mods||{}).forEach(function(mk){
-      var md=document.createElement('div');md.className='el-item';md.style.paddingLeft=(20+depth*14)+'px';
+      var md=document.createElement('div');
+      md.className='el-item';
+      md.style.paddingLeft=(20+depth*14)+'px';
       md.innerHTML='<div class="el-ic" style="background:rgba(196,181,253,.15);color:#c4b5fd">✦</div><span class="el-nm" style="color:var(--ac3)">'+mk+'</span>';
-      md.onclick=function(e){e.stopPropagation();selEl(el.id);};list.appendChild(md);
+      md.onclick=function(e){e.stopPropagation();selEl(el.id);};
+      list.appendChild(md);
     });
+  });
 
-    kids.forEach(function(child){renderNode(child,depth+1);});
-  }
-
-  // Drop lên vùng trống = unparent
-  list.ondragover=function(e){e.preventDefault();};
-  list.ondrop=function(e){
-    e.preventDefault();if(e.target!==list||!hierDrag)return;
-    var drag=getEl(hierDrag);if(!drag||!drag.parentId)return;
-    saveH();unparent(drag);renderHier();renderProps();
+  // ── DROP VÀO VÙNG TRỐNG CUỐI LIST → UNPARENT ──
+  list.ondragover=function(e){
+    e.preventDefault();
+    if(!_hDragId)return;
+    var items=list.querySelectorAll('.el-item[data-id]');
+    var last=items[items.length-1];
+    if(!last)return;
+    var rect=last.getBoundingClientRect();
+    var listRect=list.getBoundingClientRect();
+    // Nếu chuột dưới item cuối cùng → hiện placeholder root
+    if(e.clientY>rect.bottom){
+      if(_hOverId!=='__root__'){
+        _hOverId='__root__';_hPos='after';
+        _removePlaceholder();
+        list.querySelectorAll('.el-item').forEach(function(n){n.classList.remove('hier-over','hier-insert-before','hier-insert-after');});
+        var ph=_makePlaceholder(0);
+        ph.style.margin='3px 6px';
+        list.appendChild(ph);
+        _hPlaceholder=ph;
+      }
+    }
   };
 
-  els.filter(function(e){return!e.parentId;}).forEach(function(el){renderNode(el,0);});
+  list.ondrop=function(e){
+    e.preventDefault();
+    _removePlaceholder();
+    if(!_hDragId)return;
+    var dragged=getEl(_hDragId);
+    if(!dragged)return;
+
+    // Nếu drop vào vùng trống (không phải item cụ thể) → unparent về root
+    if(e.target===list||e.target===document.getElementById('eemp')){
+      if(dragged.parentId){
+        saveH();
+        unparent(dragged);
+        renderEl(dragged);
+        getDescendants(dragged.id).forEach(renderEl);
+        renderHier();renderProps();
+        toast('🔓 '+dragged.name+' → Root');
+      }
+    }
+    _hDragId=null;_hOverId=null;_hPos=null;
+  };
+
   hint();
 }
 
