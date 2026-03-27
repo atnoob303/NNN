@@ -313,3 +313,17 @@ body{
 .el-item[draggable]{cursor:grab}
 .el-item[draggable]:active{cursor:grabbing}
 #hier-ph{position:relative;pointer-events:none;transition:all .1s}
+
+/* Ruler overlay */
+.rul-line{position:absolute;pointer-events:none}
+.rul-h{height:1px;background:rgba(34,211,238,.5);left:0;right:0}
+.rul-v{width:1px;background:rgba(34,211,238,.5);top:0;bottom:0}
+.rul-lbl{
+  position:absolute;transform:translate(-50%,-50%);
+  font-size:9px;font-family:'JetBrains Mono',monospace;
+  color:#22d3ee;background:rgba(13,13,20,.75);
+  padding:1px 4px;border-radius:2px;pointer-events:none;
+  white-space:nowrap;
+}
+/* Align bar */
+#align-bar{display:none;gap:3px;align-items:center}
