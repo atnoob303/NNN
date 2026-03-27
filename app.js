@@ -254,7 +254,7 @@ function startScaleHandle(el,pos,e){
     if(pos==='tl'||pos==='tc'||pos==='tr'){nh=Math.max(20,oh-dy);ny=oy+oh-nh;}
     if(sq&&(pos==='tl'||pos==='tr'||pos==='bl'||pos==='br')){var s=Math.max(nw,nh);nw=s;nh=s;if(pos==='tl'){nx=ox+ow-s;ny=oy+oh-s;}if(pos==='tr')ny=oy+oh-s;if(pos==='bl')nx=ox+ow-s;}
     if(pos==='tc'||pos==='bc'){nw=ow;nx=ox;}if(pos==='ml'||pos==='mr'){nh=oh;ny=oy;}
-    el.w=nw;el.h=nh;el.x=nx;el.y=ny;renderEl(el);renderProps();updInfo(el);getDescendants(el.id).forEach(renderEl);
+    el.w=nw;el.h=nh;el.x=nx;el.y=ny;renderEl(el);renderProps();updInfo(el);updateRuler(el);getDescendants(el.id).forEach(renderEl);
   }
   function mu(){document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);}
   document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
@@ -283,7 +283,7 @@ function startDrag(el,e){
   function mm(ev){
     if(isKid){el.x=slx+(ev.clientX-smx);el.y=sly+(ev.clientY-smy);}
     else{el.x=Math.max(0,ev.clientX-ox);el.y=Math.max(0,ev.clientY-oy);}
-    renderEl(el);updInfo(el);if(!isKid)getDescendants(el.id).forEach(renderEl);
+    renderEl(el);updInfo(el);updateRuler(el);if(!isKid)getDescendants(el.id).forEach(renderEl);
   }
   function mu(ev){
     document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);
