@@ -303,3 +303,13 @@ body{
   padding:5px 12px;border-radius:5px;font-size:10px;font-weight:700;
   z-index:9999;pointer-events:none;opacity:0;transition:opacity .25s;
 }
+
+/* Hierarchy drag-drop v2 */
+.hier-over{background:rgba(124,106,247,.18)!important;outline:1px solid var(--ac);border-radius:4px}
+.hier-insert-before{border-top:2px solid var(--ac)!important}
+.hier-insert-after{border-bottom:2px solid var(--ac)!important}
+.hier-unpar{margin-left:auto;font-size:9px;color:var(--rd);cursor:pointer;padding:0 3px;opacity:.6}
+.hier-unpar:hover{opacity:1}
+.el-item[draggable]{cursor:grab}
+.el-item[draggable]:active{cursor:grabbing}
+#hier-ph{position:relative;pointer-events:none;transition:all .1s}
