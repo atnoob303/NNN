@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Roblox UI Builder</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="topbar">
+  <span class="logo">🎮 Roblox UI Builder</span>
+  <div class="sep"></div>
+  <button class="tbtn active" id="btn-sel" onclick="setTool('sel')">✦ Select</button>
+  <button class="tbtn" id="btn-drw" onclick="setTool('drw')">✎ Draw</button>
+  <div class="sep"></div>
+  <button class="tbtn cy" onclick="undo()">↩ Undo</button>
+  <button class="tbtn gr" onclick="dupSel()">⧉ Dup</button>
+  <button class="tbtn" onclick="layerUp()">↑ Fwd</button>
+  <button class="tbtn" onclick="layerDn()">↓ Bck</button>
+  <div class="sep"></div>
+  <button class="tbtn rd" onclick="clearAll()">✕ Clear</button>
+  <button class="tbtn yw" onclick="showExport()">⬇ Export Lua</button>
+  <span id="cinfo" style="margin-left:auto;font-size:9px;color:var(--tx3);font-family:'JetBrains Mono',monospace"></span>
+</div>
+<div id="main">
+  <div id="lp">
+    <div class="lptabs">
+      <div class="lptab on" id="lt0" onclick="lTab(0)">Components</div>
+      <div class="lptab" id="lt1" onclick="lTab(1)">Hierarchy</div>
+    </div>
+    <div class="lptc on" id="lc0">
+      <div class="cg-hdr">📦 Containers</div>
+      <div class="ci" onclick="addPreset('Frame')"><div class="ci-ic" style="background:rgba(124,106,247,.2);color:#7c6af7">▭</div><span class="ci-nm">Frame</span></div>
+      <div class="ci" onclick="addPreset('ScrollingFrame')"><div class="ci-ic" style="background:rgba(167,139,250,.2);color:#a78bfa">⊟</div><span class="ci-nm">ScrollingFrame</span></div>
+      <div class="ci" onclick="addPreset('CanvasGroup')"><div class="ci-ic" style="background:rgba(196,181,253,.2);color:#c4b5fd">⊞</div><span class="ci-nm">CanvasGroup</span></div>
+      <div class="ci" onclick="addPreset('ViewportFrame')"><div class="ci-ic" style="background:rgba(96,165,250,.2);color:#60a5fa">📦</div><span class="ci-nm">ViewportFrame</span><span class="ci-bd" style="background:rgba(96,165,250,.2);color:#60a5fa">3D</span></div>
+      <div class="ci" onclick="addPreset('VideoFrame')"><div class="ci-ic" style="background:rgba(245,158,11,.2);color:#f59e0b">▶</div><span class="ci-nm">VideoFrame</span></div>
+      <div class="ci" onclick="addPreset('ScreenGui')"><div class="ci-ic" style="background:rgba(34,211,238,.2);color:#22d3ee">⊡</div><span class="ci-nm">ScreenGui</span><span class="ci-bd" style="background:rgba(34,211,238,.2);color:#22d3ee">Root</span></div>
+      <div class="cg-hdr">🔤 Display</div>
+      <div class="ci" onclick="addPreset('TextLabel')"><div class="ci-ic" style="background:rgba(74,222,128,.2);color:#4ade80">T</div><span class="ci-nm">TextLabel</span></div>
+      <div class="ci" onclick="addPreset('ImageLabel')"><div class="ci-ic" style="background:rgba(52,211,153,.2);color:#34d399">🖼</div><span class="ci-nm">ImageLabel</span></div>
+      <div class="cg-hdr">🖱 Interactive</div>
+      <div class="ci" onclick="addPreset('TextButton')"><div class="ci-ic" style="background:rgba(244,114,182,.2);color:#f472b6">⊡</div><span class="ci-nm">TextButton</span></div>
+      <div class="ci" onclick="addPreset('ImageButton')"><div class="ci-ic" style="background:rgba(251,113,133,.2);color:#fb7185">🔘</div><span class="ci-nm">ImageButton</span></div>
+      <div class="cg-hdr">📐 Layout <span style="font-size:8px;color:var(--tx3)">(select first)</span></div>
+      <div class="ci" onclick="addMod('UIListLayout')"><div class="ci-ic" style="background:rgba(251,191,36,.2);color:#fbbf24">≡</div><span class="ci-nm">UIListLayout</span><span class="ci-bd" style="background:rgba(251,191,36,.15);color:#fbbf24">Mod</span></div>
+      <div class="ci" onclick="addMod('UIGridLayout')"><div class="ci-ic" style="background:rgba(251,191,36,.2);color:#fbbf24">⊞</div><span class="ci-nm">UIGridLayout</span><span class="ci-bd" style="background:rgba(251,191,36,.15);color:#fbbf24">Mod</span></div>
+      <div class="ci" onclick="addMod('UITableLayout')"><div class="ci-ic" style="background:rgba(251,191,36,.2);color:#fbbf24">⊟</div><span class="ci-nm">UITableLayout</span><span class="ci-bd" style="background:rgba(251,191,36,.15);color:#fbbf24">Mod</span></div>
+      <div class="ci" onclick="addMod('UIPageLayout')"><div class="ci-ic" style="background:rgba(251,191,36,.2);color:#fbbf24">⇌</div><span class="ci-nm">UIPageLayout</span><span class="ci-bd" style="background:rgba(251,191,36,.15);color:#fbbf24">Mod</span></div>
+      <div class="cg-hdr">✨ Modifiers <span style="font-size:8px;color:var(--tx3)">(select first)</span></div>
+      <div class="ci" onclick="addMod('UICorner')"><div class="ci-ic" style="background:rgba(196,181,253,.2);color:#c4b5fd">◜</div><span class="ci-nm">UICorner</span><span class="ci-bd" style="background:rgba(196,181,253,.15);color:#c4b5fd">Mod</span></div>
+      <div class="ci" onclick="addMod('UIGradient')"><div class="ci-ic" style="background:rgba(196,181,253,.2);color:#c4b5fd">▦</div><span class="ci-nm">UIGradient</span><span class="ci-bd" style="background:rgba(196,181,253,.15);color:#c4b5fd">Mod</span></div>
+      <div class="ci" onclick="addMod('UIStroke')"><div class="ci-ic" style="background:rgba(196,181,253,.2);color:#c4b5fd">▭</div><span class="ci-nm">UIStroke</span><span class="ci-bd" style="background:rgba(196,181,253,.15);color:#c4b5fd">Mod</span></div>
+      <div class="ci" onclick="addMod('UIPadding')"><div class="ci-ic" style="background:rgba(196,181,253,.2);color:#c4b5fd">⊡</div><span class="ci-nm">UIPadding</span><span class="ci-bd" style="background:rgba(196,181,253,.15);color:#c4b5fd">Mod</span></div>
+      <div class="ci" onclick="addMod('UIScale')"><div class="ci-ic" style="background:rgba(196,181,253,.2);color:#c4b5fd">⤢</div><span class="ci-nm">UIScale</span><span class="ci-bd" style="background:rgba(196,181,253,.15);color:#c4b5fd">Mod</span></div>
+      <div class="ci" onclick="addMod('UIAspectRatioConstraint')"><div class="ci-ic" style="background:rgba(196,181,253,.2);color:#c4b5fd">⊠</div><span class="ci-nm">UIAspectRatio</span><span class="ci-bd" style="background:rgba(196,181,253,.15);color:#c4b5fd">Mod</span></div>
+      <div class="ci" onclick="addMod('UISizeConstraint')"><div class="ci-ic" style="background:rgba(196,181,253,.2);color:#c4b5fd">⊞</div><span class="ci-nm">UISizeConstraint</span><span class="ci-bd" style="background:rgba(196,181,253,.15);color:#c4b5fd">Mod</span></div>
+      <div class="ci" onclick="addMod('UITextSizeConstraint')"><div class="ci-ic" style="background:rgba(196,181,253,.2);color:#c4b5fd">T↕</div><span class="ci-nm">UITextSize</span><span class="ci-bd" style="background:rgba(196,181,253,.15);color:#c4b5fd">Mod</span></div>
+      <div class="ci" onclick="addMod('UIFlexItem')"><div class="ci-ic" style="background:rgba(196,181,253,.2);color:#c4b5fd">⇔</div><span class="ci-nm">UIFlexItem</span><span class="ci-bd" style="background:rgba(34,211,238,.15);color:#22d3ee">New</span></div>
+      <div style="height:6px"></div>
+    </div>
+    <div class="lptc" id="lc1">
+      <div id="elist"></div>
+      <div id="eemp" class="el-emp">Chưa có element nào.<br>Click component để bắt đầu!</div>
+    </div>
+  </div>
+  <div id="ca">
+    <div class="gridbg"></div>
+    <div id="cv">
+      <div id="ehint">
+        <div class="ehint-ic">🎮</div>
+        <div class="ehint-tx">Click component bên trái rồi kéo vẽ<br><span style="font-size:9px;color:var(--tx3)">Delete · Ctrl+Z · Ctrl+D · Arrow keys</span></div>
+      </div>
+    </div>
+  </div>
+  <div id="rp"><div id="pp"><div class="no-sel">Chọn một element<br>để xem Properties</div></div></div>
+</div>
+
+<!-- Export Modal -->
+<div id="em">
+  <div id="eb">
+    <div class="em-hdr"><span class="em-title">📄 Export Code</span><button class="em-x" onclick="hideExport()">✕</button></div>
+    <div class="em-tabs">
+      <div class="em-tab on" id="etl" onclick="setExTab('lua')">Lua (Roblox)</div>
+      <div class="em-tab" id="eth" onclick="setExTab('html')">HTML Preview</div>
+    </div>
+    <pre id="ec"></pre>
+    <div class="em-ftr">
+      <span class="em-info" id="einfo"></span>
+      <button class="tbtn" onclick="copyCode()">📋 Copy</button>
+      <button class="tbtn gr" onclick="dlCode()">⬇ Download</button>
+      <button class="tbtn" onclick="hideExport()">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<!-- Load app logic -->
+<script src="app.js"></script>
+</body>
+</html>
