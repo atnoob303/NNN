@@ -1504,36 +1504,35 @@ function drawBoundingBox(x,y,w,h){
 }
 
 // Tia VÀNG — canh chỉnh khi resize
-function drawResizeGuides(el){
-  var ov=document.getElementById('ruler-overlay');
-  if(!ov)return;
-  // Hiện overlay dù rulerOn=false
-  if(ov.style.display==='none')ov.style.display='block';
-  ov.querySelectorAll('.rul-resize').forEach(function(e){e.remove();});
-  var x=Math.round(el.x),y=Math.round(el.y),w=Math.round(el.w),h=Math.round(el.h);
-  var color='#fbbf24';
-  var lines=[
-    'top:'+y+'px;left:0;right:0;height:0;border-top:1px solid '+color,
-    'top:'+(y+h)+'px;left:0;right:0;height:0;border-top:1px solid '+color,
-    'top:0;bottom:0;left:'+x+'px;width:0;border-left:1px solid '+color,
-    'top:0;bottom:0;left:'+(x+w)+'px;width:0;border-left:1px solid '+color
+function drawResizeGuides(x, y, w, h) {
+  var ov = document.getElementById('ruler-overlay');
+  if (!ov) return;
+  if (ov.style.display === 'none') ov.style.display = 'block';
+  ov.querySelectorAll('.rul-resize').forEach(function(e) { e.remove(); });
+  x = Math.round(x); y = Math.round(y); w = Math.round(w); h = Math.round(h);
+  var color = '#fbbf24';
+  var lines = [
+    'top:' + y + 'px;left:0;right:0;height:0;border-top:1px solid ' + color,
+    'top:' + (y + h) + 'px;left:0;right:0;height:0;border-top:1px solid ' + color,
+    'top:0;bottom:0;left:' + x + 'px;width:0;border-left:1px solid ' + color,
+    'top:0;bottom:0;left:' + (x + w) + 'px;width:0;border-left:1px solid ' + color
   ];
-  lines.forEach(function(s){
-    var d=document.createElement('div');
-    d.className='rul-resize';
-    d.style.cssText='position:absolute;opacity:.55;pointer-events:none;z-index:709;'+s;
+  lines.forEach(function(s) {
+    var d = document.createElement('div');
+    d.className = 'rul-resize';
+    d.style.cssText = 'position:absolute;opacity:.55;pointer-events:none;z-index:709;' + s;
     ov.appendChild(d);
   });
-  var lbls=[
-    {text:'W: '+w,css:'left:'+(x+w/2)+'px;top:'+(y-16)+'px;transform:translateX(-50%);color:#fbbf24'},
-    {text:'H: '+h,css:'left:'+(x+w+6)+'px;top:'+(y+h/2)+'px;transform:translateY(-50%);color:#fbbf24'},
-    {text:x+', '+y,css:'left:'+(x+2)+'px;top:'+(y+2)+'px;color:#fbbf24'}
+  var lbls = [
+    { text: 'W: ' + w, css: 'left:' + (x + w / 2) + 'px;top:' + (y - 16) + 'px;transform:translateX(-50%);color:#fbbf24' },
+    { text: 'H: ' + h, css: 'left:' + (x + w + 6) + 'px;top:' + (y + h / 2) + 'px;transform:translateY(-50%);color:#fbbf24' },
+    { text: x + ', ' + y, css: 'left:' + (x + 2) + 'px;top:' + (y + 2) + 'px;color:#fbbf24' }
   ];
-  lbls.forEach(function(l){
-    var d=document.createElement('div');
-    d.className='rul-resize rul-lbl';
-    d.style.cssText=l.css+';background:rgba(13,13,20,.8);';
-    d.textContent=l.text;
+  lbls.forEach(function(l) {
+    var d = document.createElement('div');
+    d.className = 'rul-resize rul-lbl';
+    d.style.cssText = l.css + ';background:rgba(13,13,20,.8);';
+    d.textContent = l.text;
     ov.appendChild(d);
   });
 }
