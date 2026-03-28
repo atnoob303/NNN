@@ -25,7 +25,7 @@ var els=[],sel=null,selGroup=[],tool='sel',idc=0,hist=[],dtool=null,etab='lua';
 var rulerOn=false;
 var tMode=0,TMODES=['Scale','Move','Rotate','All','Warp'],TICONS=['⤢','✥','↻','⊕','⌀'];
 var hierDrag=null;
-var VERSION='Alpha 0.0.6.17';
+var VERSION='Alpha 0.0.6.18';
 var distGuideOn=true;
 
 var DEFS={
@@ -300,17 +300,9 @@ function startScaleHandle(el, pos, e) {
   var startCX = ap.x + el.w / 2;
   var startCY = ap.y + el.h / 2;
 
-  // Snapshot: lưu vị trí tương đối của child so với parent (tỉ lệ 0..1)
   var childSnaps = getDescendants(el.id).map(function(c) {
-    var relX = c.x - ox;  // offset so với top-left parent
-    var relY = c.y - oy;
-    return {
-      el: c,
-      rx: relX / ow,  // tỉ lệ theo chiều ngang
-      ry: relY / oh,  // tỉ lệ theo chiều dọc
-      rw: c.w / ow,   // tỉ lệ kích thước
-      rh: c.h / oh
-    };
+    var abs = getAbsPos(c);
+    return { el: c, ax: abs.x, ay: abs.y };
   });
 
   function mm(ev) {
@@ -336,7 +328,6 @@ function startScaleHandle(el, pos, e) {
 
     el.w = nw; el.h = nh;
 
-    // Tính vị trí mới của center parent
     var newFixWorldX = startCX + fix.lx * (nw/ow) * Math.cos(rot) - fix.ly * (nh/oh) * Math.sin(rot);
     var newFixWorldY = startCY + fix.lx * (nw/ow) * Math.sin(rot) + fix.ly * (nh/oh) * Math.cos(rot);
     var origFixWorldX = startCX + fix.lx * Math.cos(rot) - fix.ly * Math.sin(rot);
@@ -348,13 +339,19 @@ function startScaleHandle(el, pos, e) {
     el.x = newCX - el.w / 2;
     el.y = newCY - el.h / 2;
 
-    // Scale children theo tỉ lệ so với parent MỚI
+    // FIX: chiếu world coords của child về local space của parent đúng cách
     childSnaps.forEach(function(s) {
       var c = s.el;
-      c.x = el.x + s.rx * nw;
-      c.y = el.y + s.ry * nh;
-      c.w = Math.max(10, s.rw * nw);
-      c.h = Math.max(10, s.rh * nh);
+      var par = getEl(c.parentId);
+      if (!par) return;
+      var pa = getAbsPos(par);
+      var pcx = pa.x + par.w / 2, pcy = pa.y + par.h / 2;
+      var pr = (pa.rot || 0) * Math.PI / 180;
+      var relX = s.ax + c.w / 2 - pcx;
+      var relY = s.ay + c.h / 2 - pcy;
+      // FIX: dấu sin đúng khi xoay ngược (-pr)
+      c.x =  relX * Math.cos(-pr) - relY * Math.sin(-pr);
+      c.y =  relX * Math.sin(-pr) + relY * Math.cos(-pr);
       renderEl(c);
     });
 
