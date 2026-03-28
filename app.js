@@ -282,12 +282,16 @@ function startWarpCtrl(el,key,e){
   document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
 }
 function startDrag(el,e){
-  saveH();var isKid=!!el.parentId,slx=el.x,sly=el.y,smx=e.clientX,smy=e.clientY,ox=e.clientX-el.x,oy=e.clientY-el.y;
+  // Multi-select: kéo cả nhóm
+  if(selGroup.length>1&&selGroup.indexOf(el.id)>=0){
+    startGroupDrag(e);return;
+  }
+  saveH();
+  var isKid=!!el.parentId,slx=el.x,sly=el.y,smx=e.clientX,smy=e.clientY,ox=e.clientX-el.x,oy=e.clientY-el.y;
   function mm(ev){
     if(isKid){el.x=slx+(ev.clientX-smx);el.y=sly+(ev.clientY-smy);}
     else{el.x=Math.max(0,ev.clientX-ox);el.y=Math.max(0,ev.clientY-oy);}
-    snapGuides(el);
-    renderEl(el);updInfo(el);updateRuler(el);
+    snapGuides(el);renderEl(el);updInfo(el);updateRuler(el);
     if(!isKid)getDescendants(el.id).forEach(renderEl);
   }
   function mu(ev){
@@ -321,6 +325,137 @@ function selEl(id,shift){
   });
   updateAlignBar();
   renderProps();renderHier();
+  renderGroupBox();
+}
+
+// §10b GROUP TRANSFORM
+var _gb=null,_gbH=[];
+ 
+function calcGroupBounds(){
+  var grp=selGroup.map(getEl).filter(Boolean);
+  if(grp.length<2)return null;
+  var mnx=Infinity,mny=Infinity,mxx=-Infinity,mxy=-Infinity;
+  grp.forEach(function(e){
+    var a=getAbsPos(e);
+    mnx=Math.min(mnx,a.x);mny=Math.min(mny,a.y);
+    mxx=Math.max(mxx,a.x+e.w);mxy=Math.max(mxy,a.y+e.h);
+  });
+  return{x:mnx,y:mny,w:mxx-mnx,h:mxy-mny};
+}
+ 
+function clearGroupBox(){
+  if(_gb&&_gb.parentNode)_gb.parentNode.removeChild(_gb);
+  _gb=null;_gbH=[];
+}
+ 
+function renderGroupBox(){
+  clearGroupBox();
+  if(selGroup.length<2)return;
+  var b=calcGroupBounds();if(!b)return;
+  var cv=document.getElementById('cv');
+ 
+  _gb=document.createElement('div');
+  _gb.id='group-box';
+  _gb.style.cssText='position:absolute;z-index:500;left:'+b.x+'px;top:'+b.y+'px;width:'+b.w+'px;height:'+b.h+'px;outline:2px dashed var(--ac);outline-offset:2px;background:rgba(124,106,247,0.04);cursor:move;box-sizing:border-box;';
+  cv.appendChild(_gb);
+ 
+  [{id:'tl',s:'top:-5px;left:-5px;cursor:nw-resize'},
+   {id:'tc',s:'top:-5px;left:50%;transform:translateX(-50%);cursor:n-resize'},
+   {id:'tr',s:'top:-5px;right:-5px;cursor:ne-resize'},
+   {id:'ml',s:'top:50%;left:-5px;transform:translateY(-50%);cursor:w-resize'},
+   {id:'mr',s:'top:50%;right:-5px;transform:translateY(-50%);cursor:e-resize'},
+   {id:'bl',s:'bottom:-5px;left:-5px;cursor:sw-resize'},
+   {id:'bc',s:'bottom:-5px;left:50%;transform:translateX(-50%);cursor:s-resize'},
+   {id:'br',s:'bottom:-5px;right:-5px;cursor:se-resize'}]
+  .forEach(function(h){
+    var hd=document.createElement('div');
+    hd.style.cssText='position:absolute;width:9px;height:9px;background:var(--ac);border:2px solid var(--bg0);border-radius:2px;z-index:502;'+h.s;
+    hd.onmousedown=function(e){e.stopPropagation();e.preventDefault();startGroupScale(h.id,e);};
+    _gb.appendChild(hd);_gbH.push(hd);
+  });
+ 
+  _gb.onmousedown=function(e){
+    if(e.target!==_gb)return;
+    e.stopPropagation();startGroupDrag(e);
+  };
+}
+ 
+function startGroupDrag(e){
+  saveH();
+  var grp=selGroup.map(getEl).filter(Boolean);
+  var snaps=grp.map(function(el){return{el:el,x:el.x,y:el.y};});
+  var smx=e.clientX,smy=e.clientY;
+  function mm(ev){
+    var dx=ev.clientX-smx,dy=ev.clientY-smy;
+    snaps.forEach(function(s){
+      s.el.x=s.x+dx;s.el.y=s.y+dy;
+      renderEl(s.el);getDescendants(s.el.id).forEach(renderEl);
+    });
+    renderGroupBox();
+    var b=calcGroupBounds();
+    if(b)document.getElementById('cinfo').textContent='Group · '+Math.round(b.x)+','+Math.round(b.y)+' · '+Math.round(b.w)+'×'+Math.round(b.h);
+  }
+  function mu(){document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);renderHier();}
+  document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
+}
+ 
+function startGroupScale(pos,e){
+  saveH();
+  var b0=calcGroupBounds();if(!b0)return;
+  var grp=selGroup.map(getEl).filter(Boolean);
+  // Snapshot tỉ lệ relative so với group bounds
+  var snaps=grp.map(function(el){
+    var a=getAbsPos(el);
+    return{el:el,rx:(a.x-b0.x)/b0.w,ry:(a.y-b0.y)/b0.h,rw:el.w/b0.w,rh:el.h/b0.h};
+  });
+  var sx=e.clientX,sy=e.clientY;
+ 
+  function mm(ev){
+    var dx=ev.clientX-sx,dy=ev.clientY-sy;
+    var nb={x:b0.x,y:b0.y,w:b0.w,h:b0.h};
+ 
+    if(pos==='tr'||pos==='mr'||pos==='br')nb.w=Math.max(40,b0.w+dx);
+    if(pos==='tl'||pos==='ml'||pos==='bl'){nb.w=Math.max(40,b0.w-dx);nb.x=b0.x+b0.w-nb.w;}
+    if(pos==='bl'||pos==='bc'||pos==='br')nb.h=Math.max(40,b0.h+dy);
+    if(pos==='tl'||pos==='tc'||pos==='tr'){nb.h=Math.max(40,b0.h-dy);nb.y=b0.y+b0.h-nb.h;}
+    if(pos==='tc'||pos==='bc'){nb.w=b0.w;nb.x=b0.x;}
+    if(pos==='ml'||pos==='mr'){nb.h=b0.h;nb.y=b0.y;}
+    // Shift = giữ tỉ lệ aspect ratio của group
+    if(ev.shiftKey&&(pos==='tl'||pos==='tr'||pos==='bl'||pos==='br')){
+      var rat=b0.w/b0.h;
+      if(nb.w/nb.h>rat)nb.h=nb.w/rat;else nb.w=nb.h*rat;
+      if(pos==='tl'){nb.x=b0.x+b0.w-nb.w;nb.y=b0.y+b0.h-nb.h;}
+      if(pos==='tr')nb.y=b0.y+b0.h-nb.h;
+      if(pos==='bl')nb.x=b0.x+b0.w-nb.w;
+    }
+ 
+    // Scale từng element theo tỉ lệ vị trí trong group
+    snaps.forEach(function(s){
+      var el=s.el;
+      var nax=nb.x+s.rx*nb.w;
+      var nay=nb.y+s.ry*nb.h;
+      var nw=Math.max(10,s.rw*nb.w);
+      var nh=Math.max(10,s.rh*nb.h);
+      if(el.parentId){
+        var par=getEl(el.parentId);
+        var pa=getAbsPos(par);
+        el.x=nax-(pa.x+par.w/2)+nw/2;
+        el.y=nay-(pa.y+par.h/2)+nh/2;
+      } else {
+        el.x=nax;el.y=nay;
+      }
+      el.w=nw;el.h=nh;
+      renderEl(el);getDescendants(el.id).forEach(renderEl);
+    });
+ 
+    if(_gb){
+      _gb.style.left=nb.x+'px';_gb.style.top=nb.y+'px';
+      _gb.style.width=nb.w+'px';_gb.style.height=nb.h+'px';
+    }
+    document.getElementById('cinfo').textContent='Group · '+Math.round(nb.x)+','+Math.round(nb.y)+' · '+Math.round(nb.w)+'×'+Math.round(nb.h);
+  }
+  function mu(){document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);renderGroupBox();}
+  document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
 }
 
 // §11 CANVAS DRAW
@@ -401,7 +536,7 @@ ca.onmousedown=function(e){
       if(found.length){
         selGroup=found;sel=found[found.length-1];
         els.forEach(function(e){renderEl(e);});
-        updateAlignBar();renderProps();renderHier();
+        updateAlignBar();renderProps();renderHier();renderGroupBox()
         toast('✦ Selected '+found.length+' elements');
       }
       document.removeEventListener('mousemove',mm);
@@ -432,9 +567,15 @@ function dupSel(){
 }
 function delSel(){
   if(!sel)return;saveH();
-  getChildren(sel).forEach(function(c){c.parentId=null;});
-  var d=document.getElementById(sel);if(d)d.remove();
-  els=els.filter(function(e){return e.id!==sel;});sel=null;renderProps();renderHier();hint();
+  // Xóa tất cả trong selGroup
+  selGroup.forEach(function(id){
+    getChildren(id).forEach(function(c){c.parentId=null;});
+    var d=document.getElementById(id);if(d)d.remove();
+    els=els.filter(function(e){return e.id!==id;});
+  });
+  sel=null;selGroup=[];
+  clearGroupBox();
+  renderProps();renderHier();hint();
 }
 function clearAll(){
   if(els.length&&!confirm('Xóa tất cả?'))return;saveH();
@@ -943,6 +1084,7 @@ document.addEventListener('keyup',function(e){
     '.el-item[draggable]:active{cursor:grabbing}';
   document.head.appendChild(s);
 
+s.textContent += '#group-box{transition:none}';
 renderProps();hint();
 
 })();
