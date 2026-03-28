@@ -315,9 +315,6 @@ body{
 #hier-ph{position:relative;pointer-events:none;transition:all .1s}
 
 /* ── RULER ── */
-.rul-line{position:absolute;pointer-events:none}
-.rul-h{height:1px;background:rgba(34,211,238,.5);left:0;right:0}
-.rul-v{width:1px;background:rgba(34,211,238,.5);top:0;bottom:0}
 .rul-lbl{
   position:absolute;
   transform:translate(-50%,-50%);
@@ -350,3 +347,7 @@ body{
   z-index:700;
   display:none;
 }
+
+.rul-line{position:absolute;pointer-events:none;z-index:707;}
+.rul-h{left:0;right:0;height:0;border-top:1px dashed #22d3ee;}
+.rul-v{top:0;bottom:0;width:0;border-left:1px dashed #22d3ee;}
