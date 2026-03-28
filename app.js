@@ -880,6 +880,29 @@ document.addEventListener('keydown',function(e){
   if(e.key==='Delete'||e.key==='Backspace')delSel();
   if(e.ctrlKey&&e.key==='z'){e.preventDefault();undo();}
   if(e.ctrlKey&&e.key==='d'){e.preventDefault();dupSel();}
+  if(e.ctrlKey&&e.key==='p'){
+    e.preventDefault();
+    var child=getEl(sel);
+    if(!child){toast('⚠ Chọn element trước!');return;}
+    var cx=child.x+child.w/2,cy=child.y+child.h/2,best=null,bestA=Infinity;
+    els.forEach(function(el){
+      if(el.id===child.id||isAncestor(el.id,child.id))return;
+      var ap=getAbsPos(el);
+      if(cx>=ap.x&&cx<=ap.x+el.w&&cy>=ap.y&&cy<=ap.y+el.h){
+        var area=el.w*el.h;
+        if(area<bestA){bestA=area;best=el;}
+      }
+    });
+    if(best){
+      saveH();setParent(child,best.id);
+      renderEl(child);getDescendants(child.id).forEach(renderEl);
+      renderHier();renderProps();
+      toast('📦 '+child.name+' → child của '+best.name);
+    } else {
+      toast('⚠ Không tìm thấy parent phù hợp!');
+    }
+    return;
+  }
   if(e.key==='Escape'){setTool('sel');selEl(null);renderProps();dtool=null;}
   var el=getEl(sel);if(!el)return;
   var st=e.shiftKey?10:1;
@@ -1078,34 +1101,3 @@ function snapGuides(el){
     cv.appendChild(g);_guideLines.push(g);
   }
 }
-
-// §22 CTRL+P REPARENT KHI VẼ ĐÈ
-document.addEventListener('keydown',function(e){
-  if(e.ctrlKey&&e.key==='p'){
-    e.preventDefault();
-    // Tìm element đang được select (vừa vẽ xong hoặc đang chọn)
-    var child=getEl(sel);
-    if(!child){toast('⚠ Chọn element trước!');return;}
-    // Tìm element lớn nhất đang chứa nó (không phải chính nó)
-    var cx=child.x+child.w/2,cy=child.y+child.h/2,best=null,bestA=Infinity;
-    els.forEach(function(el){
-      if(el.id===child.id||isAncestor(el.id,child.id))return;
-      var ap=getAbsPos(el);
-      if(cx>=ap.x&&cx<=ap.x+el.w&&cy>=ap.y&&cy<=ap.y+el.h){
-        var area=el.w*el.h;
-        // Tìm cái nhỏ nhất vẫn chứa child (chính xác hơn)
-        if(area<bestA){bestA=area;best=el;}
-      }
-    });
-    if(best){
-      saveH();
-      setParent(child,best.id);
-      renderEl(child);
-      getDescendants(child.id).forEach(renderEl);
-      renderHier();renderProps();
-      toast('📦 '+child.name+' → child của '+best.name);
-    } else {
-      toast('⚠ Không tìm thấy parent phù hợp!');
-    }
-  }
-});
