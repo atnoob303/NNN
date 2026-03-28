@@ -842,7 +842,9 @@ document.addEventListener('keyup',function(e){
     '.el-item[draggable]:active{cursor:grabbing}';
   document.head.appendChild(s);
 
-  renderProps();hint();
+renderProps();hint();
+
+})();
 
 // §19 ALIGNMENT
 function getGroupEls(){
@@ -930,5 +932,3 @@ function updateRuler(el){
     '<div class="rul-lbl" style="left:'+(x+w+8)+'px;top:'+(y+h/2)+'px">H: '+h+'px</div>'+
     '<div class="rul-lbl" style="left:'+(x+2)+'px;top:'+(y+2)+'px">'+x+', '+y+'</div>';
 }
-  
-})();
