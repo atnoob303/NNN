@@ -1263,6 +1263,7 @@ var _arrowSaveTimer = null;
     '.el-item[draggable]{cursor:grab}'+
     '.el-item[draggable]:active{cursor:grabbing}';
   document.head.appendChild(s);
+  document.querySelectorAll('.version-tag').forEach(function(el){ el.textContent = VERSION; });
 
 s.textContent += '#group-box{transition:none}';
 renderProps();hint();
