@@ -333,3 +333,12 @@ body{
 
 /* ── ALIGN BAR ── */
 #align-bar{display:none;gap:3px;align-items:center}
+
+/* Selection box */
+#sel-box{
+  position:absolute;
+  border:1px solid var(--ac);
+  background:rgba(124,106,247,.08);
+  pointer-events:none;
+  z-index:900;
+}
