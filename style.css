@@ -342,3 +342,11 @@ body{
   pointer-events:none;
   z-index:900;
 }
+
+#ruler-overlay{
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  z-index:700;
+  display:none;
+}
