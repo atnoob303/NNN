@@ -25,7 +25,7 @@ var els=[],sel=null,selGroup=[],tool='sel',idc=0,hist=[],dtool=null,etab='lua';
 var rulerOn=false;
 var tMode=0,TMODES=['Scale','Move','Rotate','All','Warp'],TICONS=['⤢','✥','↻','⊕','⌀'];
 var hierDrag=null;
-var VERSION='Alpha 0.0.6.7';
+var VERSION='Alpha 0.0.6.8';
 var distGuideOn=true; // tia đỏ khoảng cách, mặc định bật
 
 var DEFS={
@@ -1479,7 +1479,6 @@ function drawDistanceGuides(x, y, w, h) {
   els.forEach(function(o) {
     if (selGroup.indexOf(o.id) >= 0) return;
 
-    // ── FIX Bug 1: dùng absolute position ──
     var ap = getAbsPos(o);
     var ox = Math.round(ap.x), oy = Math.round(ap.y);
     var ow = Math.round(o.w), oh = Math.round(o.h);
@@ -1492,27 +1491,38 @@ function drawDistanceGuides(x, y, w, h) {
     var color = 'rgba(239,68,68,0.7)';
 
     if (overlapV) {
+      // ── FIX: tìm vùng overlap dọc thực sự, vẽ tia tại điểm giữa vùng đó ──
+      var overlapTop    = Math.max(ey, oy);
+      var overlapBottom = Math.min(ey2, oy2);
+      var overlapMidY   = Math.round((overlapTop + overlapBottom) / 2);
+
       if (ox > ex2) {
         var gapR = ox - ex2;
-        _makeDistLine(ov, true, ex2, ey + eh / 2 - 1, gapR, color);
-        _makeDistLabel(ov, ex2 + gapR / 2, ey + eh / 2 - 10, gapR + 'px', color);
+        _makeDistLine(ov, true, ex2, overlapMidY, gapR, color);
+        _makeDistLabel(ov, ex2 + gapR / 2, overlapMidY - 10, gapR + 'px', color);
       }
       if (ex > ox2) {
         var gapL = ex - ox2;
-        _makeDistLine(ov, true, ox2, ey + eh / 2 - 1, gapL, color);
-        _makeDistLabel(ov, ox2 + gapL / 2, ey + eh / 2 - 10, gapL + 'px', color);
+        _makeDistLine(ov, true, ox2, overlapMidY, gapL, color);
+        _makeDistLabel(ov, ox2 + gapL / 2, overlapMidY - 10, gapL + 'px', color);
       }
     }
+
     if (overlapH) {
+      // ── FIX: tìm vùng overlap ngang thực sự, vẽ tia tại điểm giữa vùng đó ──
+      var overlapLeft  = Math.max(ex, ox);
+      var overlapRight = Math.min(ex2, ox2);
+      var overlapMidX  = Math.round((overlapLeft + overlapRight) / 2);
+
       if (oy > ey2) {
         var gapB = oy - ey2;
-        _makeDistLine(ov, false, ex + ew / 2 - 1, ey2, gapB, color);
-        _makeDistLabel(ov, ex + ew / 2 + 4, ey2 + gapB / 2, gapB + 'px', color);
+        _makeDistLine(ov, false, overlapMidX, ey2, gapB, color);
+        _makeDistLabel(ov, overlapMidX + 4, ey2 + gapB / 2, gapB + 'px', color);
       }
       if (ey > oy2) {
         var gapT = ey - oy2;
-        _makeDistLine(ov, false, ex + ew / 2 - 1, oy2, gapT, color);
-        _makeDistLabel(ov, ex + ew / 2 + 4, oy2 + gapT / 2, gapT + 'px', color);
+        _makeDistLine(ov, false, overlapMidX, oy2, gapT, color);
+        _makeDistLabel(ov, overlapMidX + 4, oy2 + gapT / 2, gapT + 'px', color);
       }
     }
   });
