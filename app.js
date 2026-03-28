@@ -74,6 +74,18 @@ function getAbsPos(el){
   var rx=el.x*Math.cos(pr)-el.y*Math.sin(pr),ry=el.x*Math.sin(pr)+el.y*Math.cos(pr);
   return{x:pcx+rx-el.w/2,y:pcy+ry-el.h/2,rot:(pa.rot||0)+(el.rot||0)};
 }
+
+// Tính AABB (axis-aligned bounding box) của element có rotation
+function getRotatedBounds(el){
+  var ap=getAbsPos(el);
+  var cx=ap.x+el.w/2,cy=ap.y+el.h/2;
+  var r=(ap.rot||0)*Math.PI/180;
+  var hw=el.w/2,hh=el.h/2;
+  var cos=Math.abs(Math.cos(r)),sin=Math.abs(Math.sin(r));
+  var bw=hw*cos+hh*sin,bh=hw*sin+hh*cos;
+  return{x:cx-bw,y:cy-bh,w:bw*2,h:bh*2};
+}
+
 function getChildren(pid){return els.filter(function(e){return e.parentId===pid;});}
 function getDescendants(id){
   var r=[];
@@ -90,19 +102,14 @@ function unparent(el){
   var a=getAbsPos(el);el.x=a.x;el.y=a.y;el.rot=a.rot;el.parentId=null;
   renderEl(el);renderHier();toast('🔓 Unparented');
 }
-
-// Lấy parent của el (null nếu root)
-function getParentId(el){ return el.parentId||null; }
-
-// Tính vị trí tương đối khi set parent mới
-function setParent(dragged, newParentId){
-  // Unparent cũ trước
+function getParentId(el){return el.parentId||null;}
+function setParent(dragged,newParentId){
   if(dragged.parentId){
     var abs=getAbsPos(dragged);
     dragged.x=abs.x;dragged.y=abs.y;dragged.rot=abs.rot||0;
     dragged.parentId=null;
   }
-  if(!newParentId){ return; } // chỉ unparent, không set parent mới
+  if(!newParentId){return;}
   var par=getEl(newParentId);
   if(!par)return;
   dragged.parentId=newParentId;
@@ -110,19 +117,15 @@ function setParent(dragged, newParentId){
   dragged.x=dragged.x-pcx+dragged.w/2;
   dragged.y=dragged.y-pcy+dragged.h/2;
 }
-
-// Reorder: di chuyển dragged vào đúng vị trí trong mảng els (trước/sau target)
-function reorderEl(draggedId, targetId, position){
-  // position: 'before' | 'after'
+function reorderEl(draggedId,targetId,position){
   var di=els.findIndex(function(e){return e.id===draggedId;});
   var ti=els.findIndex(function(e){return e.id===targetId;});
   if(di<0||ti<0||di===ti)return;
   var dragged=els.splice(di,1)[0];
-  ti=els.findIndex(function(e){return e.id===targetId;}); // tìm lại sau splice
+  ti=els.findIndex(function(e){return e.id===targetId;});
   if(position==='after')ti++;
   els.splice(ti,0,dragged);
 }
-
 function tryReparent(drag){
   if(!drag)return;
   var dcx=drag.x+drag.w/2,dcy=drag.y+drag.h/2,best=null,bestA=0;
@@ -138,11 +141,9 @@ function tryReparent(drag){
     toast('📦 Parented to '+best.name);renderHier();
   }
 }
-
-// Trả về absolute x,y của el (dùng cho snap/guides)
-function getElAbsXY(el) {
-  var ap = getAbsPos(el);
-  return { x: ap.x, y: ap.y, w: el.w, h: el.h };
+function getElAbsXY(el){
+  var ap=getAbsPos(el);
+  return{x:ap.x,y:ap.y,w:el.w,h:el.h};
 }
 
 // §4 TRANSFORM MODE
@@ -404,9 +405,9 @@ function calcGroupBounds(){
   if(grp.length<2)return null;
   var mnx=Infinity,mny=Infinity,mxx=-Infinity,mxy=-Infinity;
   grp.forEach(function(e){
-    var a=getAbsPos(e);
-    mnx=Math.min(mnx,a.x);mny=Math.min(mny,a.y);
-    mxx=Math.max(mxx,a.x+e.w);mxy=Math.max(mxy,a.y+e.h);
+    var b=getRotatedBounds(e);
+    mnx=Math.min(mnx,b.x);mny=Math.min(mny,b.y);
+    mxx=Math.max(mxx,b.x+b.w);mxy=Math.max(mxy,b.y+b.h);
   });
   return{x:mnx,y:mny,w:mxx-mnx,h:mxy-mny};
 }
