@@ -898,9 +898,7 @@ document.addEventListener('keydown',function(e){
       renderEl(child);getDescendants(child.id).forEach(renderEl);
       renderHier();renderProps();
       toast('📦 '+child.name+' → child của '+best.name);
-    } else {
-      toast('⚠ Không tìm thấy parent phù hợp!');
-    }
+    }else{toast('⚠ Không tìm thấy parent phù hợp!');}
     return;
   }
   if(e.key==='Escape'){setTool('sel');selEl(null);renderProps();dtool=null;}
