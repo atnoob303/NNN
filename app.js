@@ -553,7 +553,7 @@ var _selBox=null;
 
 ca.onmousedown=function(e){
   var t=e.target;
-  if(t!==ca&&t!==document.getElementById('cv')&&!t.classList.contains('gridbg'))return;
+  if(t!==ca&&t!==document.getElementById('cv')&&!t.classList.contains('gridbg')&&!(tool==='drw'))return;
 
   // DRAW MODE
 if(tool==='drw'){
