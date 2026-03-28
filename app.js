@@ -286,9 +286,12 @@ function startDrag(el,e){
   function mm(ev){
     if(isKid){el.x=slx+(ev.clientX-smx);el.y=sly+(ev.clientY-smy);}
     else{el.x=Math.max(0,ev.clientX-ox);el.y=Math.max(0,ev.clientY-oy);}
-    renderEl(el);updInfo(el);updateRuler(el);if(!isKid)getDescendants(el.id).forEach(renderEl);
+    snapGuides(el);
+    renderEl(el);updInfo(el);updateRuler(el);
+    if(!isKid)getDescendants(el.id).forEach(renderEl);
   }
   function mu(ev){
+    clearGuides();
     document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);
     if(ev.altKey){tryReparent(el);renderEl(el);}
     renderHier();
@@ -322,22 +325,94 @@ function selEl(id,shift){
 
 // §11 CANVAS DRAW
 var ca=document.getElementById('ca');
+
+// Drag-to-select state
+var _selBox=null;
+
 ca.onmousedown=function(e){
   var t=e.target;
   if(t!==ca&&t!==document.getElementById('cv')&&!t.classList.contains('gridbg'))return;
-  if(tool==='sel'){selEl(null);renderProps();return;}
-  var r=ca.getBoundingClientRect(),ds={x:e.clientX-r.left,y:e.clientY-r.top};
-  var el=mkEl(dtool||'Frame',ds.x,ds.y,10,10);
-  saveH();els.push(el);renderEl(el);selEl(el.id);hint();
-  function mm(ev){
-    var nx=ev.clientX-r.left,ny=ev.clientY-r.top;
-    el.x=Math.min(ds.x,nx);el.y=Math.min(ds.y,ny);
-    var rw=Math.abs(nx-ds.x)||10,rh=Math.abs(ny-ds.y)||10;
-    if(ev.shiftKey){var s=Math.max(rw,rh);el.w=s;el.h=s;}else{el.w=rw;el.h=rh;}
-    renderEl(el);updInfo(el);
+
+  // DRAW MODE
+  if(tool==='drw'){
+    var r=ca.getBoundingClientRect(),ds={x:e.clientX-r.left,y:e.clientY-r.top};
+    var el=mkEl(dtool||'Frame',ds.x,ds.y,10,10);
+    saveH();els.push(el);renderEl(el);selEl(el.id);hint();
+    // Lưu lại element đang vẽ để Ctrl+P dùng
+    window._drawingEl=el;
+    function mm(ev){
+      var nx=ev.clientX-r.left,ny=ev.clientY-r.top;
+      el.x=Math.min(ds.x,nx);el.y=Math.min(ds.y,ny);
+      var rw=Math.abs(nx-ds.x)||10,rh=Math.abs(ny-ds.y)||10;
+      if(ev.shiftKey){var s=Math.max(rw,rh);el.w=s;el.h=s;}else{el.w=rw;el.h=rh;}
+      renderEl(el);updInfo(el);
+    }
+    function mu(){
+      if(el.w<20)el.w=DW[el.type]||160;
+      if(el.h<20)el.h=DH[el.type]||80;
+      renderEl(el);renderProps();setTool('sel');dtool=null;
+      window._drawingEl=null;
+      document.removeEventListener('mousemove',mm);
+      document.removeEventListener('mouseup',mu);
+    }
+    document.addEventListener('mousemove',mm);
+    document.addEventListener('mouseup',mu);
+    return;
   }
-  function mu(){if(el.w<20)el.w=DW[el.type]||160;if(el.h<20)el.h=DH[el.type]||80;renderEl(el);renderProps();setTool('sel');dtool=null;document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);}
-  document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
+
+  // SELECT MODE — drag-to-select
+  if(tool==='sel'&&!e.shiftKey){
+    selEl(null);renderProps();
+    var r=ca.getBoundingClientRect();
+    var sx=e.clientX-r.left,sy=e.clientY-r.top;
+    // Tạo selection box
+    var sb=document.createElement('div');
+    sb.id='sel-box';
+    sb.style.cssText='position:absolute;border:1px solid var(--ac);background:rgba(124,106,247,.08);pointer-events:none;z-index:900;';
+    document.getElementById('cv').appendChild(sb);
+    _selBox=sb;
+    function mm(ev){
+      var nx=ev.clientX-r.left,ny=ev.clientY-r.top;
+      var bx=Math.min(sx,nx),by=Math.min(sy,ny),bw=Math.abs(nx-sx),bh=Math.abs(ny-sy);
+      sb.style.left=bx+'px';sb.style.top=by+'px';sb.style.width=bw+'px';sb.style.height=bh+'px';
+      // Preview highlight elements trong vùng
+      els.forEach(function(el){
+        var ap=getAbsPos(el);
+        var inside=ap.x<bx+bw&&ap.x+el.w>bx&&ap.y<by+bh&&ap.y+el.h>by;
+        var d=document.getElementById(el.id);
+        if(d)d.style.opacity=inside?'1':'0.4';
+      });
+    }
+    function mu(ev){
+      var nx=ev.clientX-r.left,ny=ev.clientY-r.top;
+      var bx=Math.min(sx,nx),by=Math.min(sy,ny),bw=Math.abs(nx-sx),bh=Math.abs(ny-sy);
+      if(sb.parentNode)sb.parentNode.removeChild(sb);
+      _selBox=null;
+      // Reset opacity
+      els.forEach(function(el){var d=document.getElementById(el.id);if(d)d.style.opacity='';});
+      // Nếu chỉ click (không kéo) thì bỏ qua
+      if(bw<5&&bh<5){document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);return;}
+      // Chọn tất cả element trong vùng
+      var found=[];
+      els.forEach(function(el){
+        var ap=getAbsPos(el);
+        if(ap.x<bx+bw&&ap.x+el.w>bx&&ap.y<by+bh&&ap.y+el.h>by)found.push(el.id);
+      });
+      if(found.length){
+        selGroup=found;sel=found[found.length-1];
+        els.forEach(function(e){renderEl(e);});
+        updateAlignBar();renderProps();renderHier();
+        toast('✦ Selected '+found.length+' elements');
+      }
+      document.removeEventListener('mousemove',mm);
+      document.removeEventListener('mouseup',mu);
+    }
+    document.addEventListener('mousemove',mm);
+    document.addEventListener('mouseup',mu);
+    return;
+  }
+
+  if(tool==='sel'&&e.shiftKey){return;}
 };
 
 // §12 ADD / REMOVE / HISTORY
@@ -937,3 +1012,100 @@ function updateRuler(el){
     '<div class="rul-lbl" style="left:'+(x+w+8)+'px;top:'+(y+h/2)+'px">H: '+h+'px</div>'+
     '<div class="rul-lbl" style="left:'+(x+2)+'px;top:'+(y+2)+'px">'+x+', '+y+'</div>';
 }
+
+// §21 SMART GUIDES
+var _guideLines=[];
+var SNAP_THRESHOLD=6;
+
+function clearGuides(){
+  _guideLines.forEach(function(g){if(g.parentNode)g.parentNode.removeChild(g);});
+  _guideLines=[];
+}
+
+function snapGuides(el){
+  clearGuides();
+  var others=els.filter(function(e){return e.id!==el.id;});
+  if(!others.length)return;
+
+  var ex=el.x,ey=el.y,ew=el.w,eh=el.h;
+  var ecx=ex+ew/2,ecy=ey+eh/2,ex2=ex+ew,ey2=ey+eh;
+
+  var snapX=null,snapY=null;
+  var THRESH=SNAP_THRESHOLD;
+
+  others.forEach(function(o){
+    var ap=getAbsPos(o);
+    var ox=ap.x,oy=ap.y,ow=o.w,oh=o.h;
+    var ocx=ox+ow/2,ocy=oy+oh/2,ox2=ox+ow,oy2=oy+oh;
+
+    // Snap X: left-left, left-right, center-center, right-left, right-right
+    var xPairs=[
+      [ex,ox],[ex,ox2],[ex,ocx],
+      [ecx,ox],[ecx,ox2],[ecx,ocx],
+      [ex2,ox],[ex2,ox2],[ex2,ocx]
+    ];
+    xPairs.forEach(function(p){
+      if(snapX===null&&Math.abs(p[0]-p[1])<THRESH){
+        el.x+=p[1]-p[0];
+        snapX=p[1];
+      }
+    });
+
+    // Snap Y: top-top, top-bottom, center-center, bottom-top, bottom-bottom
+    var yPairs=[
+      [ey,oy],[ey,oy2],[ey,ocy],
+      [ecy,oy],[ecy,oy2],[ecy,ocy],
+      [ey2,oy],[ey2,oy2],[ey2,ocy]
+    ];
+    yPairs.forEach(function(p){
+      if(snapY===null&&Math.abs(p[0]-p[1])<THRESH){
+        el.y+=p[1]-p[0];
+        snapY=p[1];
+      }
+    });
+  });
+
+  // Vẽ guide lines
+  var cv=document.getElementById('cv');
+  if(snapX!==null){
+    var g=document.createElement('div');
+    g.style.cssText='position:absolute;top:0;bottom:0;width:1px;background:#22d3ee;opacity:.8;pointer-events:none;z-index:800;left:'+snapX+'px;';
+    cv.appendChild(g);_guideLines.push(g);
+  }
+  if(snapY!==null){
+    var g=document.createElement('div');
+    g.style.cssText='position:absolute;left:0;right:0;height:1px;background:#22d3ee;opacity:.8;pointer-events:none;z-index:800;top:'+snapY+'px;';
+    cv.appendChild(g);_guideLines.push(g);
+  }
+}
+
+// §22 CTRL+P REPARENT KHI VẼ ĐÈ
+document.addEventListener('keydown',function(e){
+  if(e.ctrlKey&&e.key==='p'){
+    e.preventDefault();
+    // Tìm element đang được select (vừa vẽ xong hoặc đang chọn)
+    var child=getEl(sel);
+    if(!child){toast('⚠ Chọn element trước!');return;}
+    // Tìm element lớn nhất đang chứa nó (không phải chính nó)
+    var cx=child.x+child.w/2,cy=child.y+child.h/2,best=null,bestA=Infinity;
+    els.forEach(function(el){
+      if(el.id===child.id||isAncestor(el.id,child.id))return;
+      var ap=getAbsPos(el);
+      if(cx>=ap.x&&cx<=ap.x+el.w&&cy>=ap.y&&cy<=ap.y+el.h){
+        var area=el.w*el.h;
+        // Tìm cái nhỏ nhất vẫn chứa child (chính xác hơn)
+        if(area<bestA){bestA=area;best=el;}
+      }
+    });
+    if(best){
+      saveH();
+      setParent(child,best.id);
+      renderEl(child);
+      getDescendants(child.id).forEach(renderEl);
+      renderHier();renderProps();
+      toast('📦 '+child.name+' → child của '+best.name);
+    } else {
+      toast('⚠ Không tìm thấy parent phù hợp!');
+    }
+  }
+});
