@@ -373,37 +373,6 @@ function startScaleHandle(el, pos, e) {
   document.addEventListener('mousemove', mm);
   document.addEventListener('mouseup', mu);
 }
-
-function startRotate(el, e) {
-  saveH();
-  var ap = getAbsPos(el);
-  var caRect = document.getElementById('ca').getBoundingClientRect();
-  var screenCX = ap.x + el.w / 2 + caRect.left;
-  var screenCY = ap.y + el.h / 2 + caRect.top;
-  var sa = Math.atan2(e.clientY - screenCY, e.clientX - screenCX) * 180 / Math.PI;
-  var sr = el.rot || 0;
-  function mm(ev) {
-    var a = Math.atan2(ev.clientY - screenCY, ev.clientX - screenCX) * 180 / Math.PI;
-    var r = sr + (a - sa);
-    el.rot = ev.shiftKey ? Math.round(r / 15) * 15 : r;
-    renderEl(el);
-    updInfo(el);
-    getDescendants(el.id).forEach(renderEl);
-    if (rulerOn) updateRuler(el);
-    var b = getRotatedBounds(el);
-    drawBoundingBox(b.x, b.y, b.w, b.h);
-    drawResizeGuides(b.x, b.y, b.w, b.h);
-    if (distGuideOn) drawDistanceGuides(b.x, b.y, b.w, b.h);
-  }
-  function mu() {
-    clearResizeGuides();
-    document.removeEventListener('mousemove', mm);
-    document.removeEventListener('mouseup', mu);
-  }
-  document.addEventListener('mousemove', mm);
-  document.addEventListener('mouseup', mu);
-}
-
 function startWarpCorner(el,key,e){
   saveH();if(!el.warp)initWarp(el);var sx=e.clientX,sy=e.clientY,ox=el.warp[key].x,oy=el.warp[key].y;
   function mm(ev){el.warp[key].x=ox+(ev.clientX-sx);el.warp[key].y=oy+(ev.clientY-sy);var d=document.getElementById(el.id);if(d)applyWarp(d,el);renderEl(el);}
