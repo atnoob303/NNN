@@ -25,7 +25,7 @@ var els=[],sel=null,selGroup=[],tool='sel',idc=0,hist=[],dtool=null,etab='lua';
 var rulerOn=false;
 var tMode=0,TMODES=['Scale','Move','Rotate','All','Warp'],TICONS=['⤢','✥','↻','⊕','⌀'];
 var hierDrag=null;
-var VERSION='Alpha 0.0.6.12';
+var VERSION='Alpha 0.0.6.13';
 var distGuideOn=true;
 
 var DEFS={
@@ -256,26 +256,59 @@ function startScaleHandle(el, pos, e) {
   saveH();
   var sx = e.clientX, sy = e.clientY;
   var ox = el.x, oy = el.y, ow = el.w, oh = el.h;
+  var rot = (el.rot || 0) * Math.PI / 180;
+
+  var fixMap = {
+    tl:{lx: ow/2, ly: oh/2}, tc:{lx:0, ly: oh/2}, tr:{lx:-ow/2, ly: oh/2},
+    ml:{lx: ow/2, ly:0},                            mr:{lx:-ow/2, ly:0},
+    bl:{lx: ow/2, ly:-oh/2}, bc:{lx:0, ly:-oh/2},  br:{lx:-ow/2, ly:-oh/2}
+  };
+  var fix = fixMap[pos] || {lx:0, ly:0};
+
+  var ap = getAbsPos(el);
+  var startCX = ap.x + el.w / 2;
+  var startCY = ap.y + el.h / 2;
+
   var childSnaps = getDescendants(el.id).map(function(c) {
     var abs = getAbsPos(c);
     return { el: c, ax: abs.x, ay: abs.y };
   });
+
   function mm(ev) {
     var dx = ev.clientX - sx, dy = ev.clientY - sy;
-    var sq = ev.shiftKey, nw = ow, nh = oh, nx = ox, ny = oy;
-    if (pos === 'tr' || pos === 'mr' || pos === 'br') nw = Math.max(20, ow + dx);
-    if (pos === 'tl' || pos === 'ml' || pos === 'bl') { nw = Math.max(20, ow - dx); nx = ox + ow - nw; }
-    if (pos === 'bl' || pos === 'bc' || pos === 'br') nh = Math.max(20, oh + dy);
-    if (pos === 'tl' || pos === 'tc' || pos === 'tr') { nh = Math.max(20, oh - dy); ny = oy + oh - nh; }
-    if (sq && (pos === 'tl' || pos === 'tr' || pos === 'bl' || pos === 'br')) {
-      var s = Math.max(nw, nh); nw = s; nh = s;
-      if (pos === 'tl') { nx = ox + ow - s; ny = oy + oh - s; }
-      if (pos === 'tr') ny = oy + oh - s;
-      if (pos === 'bl') nx = ox + ow - s;
+
+    var lx =  dx * Math.cos(rot) + dy * Math.sin(rot);
+    var ly = -dx * Math.sin(rot) + dy * Math.cos(rot);
+
+    var nw = ow, nh = oh;
+
+    if (pos === 'tr' || pos === 'mr' || pos === 'br') nw = Math.max(20, ow + lx);
+    if (pos === 'tl' || pos === 'ml' || pos === 'bl') nw = Math.max(20, ow - lx);
+    if (pos === 'bl' || pos === 'bc' || pos === 'br') nh = Math.max(20, oh + ly);
+    if (pos === 'tl' || pos === 'tc' || pos === 'tr') nh = Math.max(20, oh - ly);
+    if (pos === 'tc' || pos === 'bc') nw = ow;
+    if (pos === 'ml' || pos === 'mr') nh = oh;
+
+    if (ev.shiftKey && (pos==='tl'||pos==='tr'||pos==='bl'||pos==='br')) {
+      var ratio = ow / oh;
+      if (nw / nh > ratio) nh = nw / ratio; else nw = nh * ratio;
+      nw = Math.max(20, nw); nh = Math.max(20, nh);
     }
-    if (pos === 'tc' || pos === 'bc') { nw = ow; nx = ox; }
-    if (pos === 'ml' || pos === 'mr') { nh = oh; ny = oy; }
-    el.w = nw; el.h = nh; el.x = nx; el.y = ny;
+
+    el.w = nw; el.h = nh;
+
+    var newFixWorldX = startCX + fix.lx * (nw/ow) * Math.cos(rot) - fix.ly * (nh/oh) * Math.sin(rot);
+    var newFixWorldY = startCY + fix.lx * (nw/ow) * Math.sin(rot) + fix.ly * (nh/oh) * Math.cos(rot);
+    var origFixWorldX = startCX + fix.lx * Math.cos(rot) - fix.ly * Math.sin(rot);
+    var origFixWorldY = startCY + fix.lx * Math.sin(rot) + fix.ly * Math.cos(rot);
+
+    var newCX = startCX + (origFixWorldX - newFixWorldX);
+    var newCY = startCY + (origFixWorldY - newFixWorldY);
+
+    el.x = newCX - el.w / 2;
+    el.y = newCY - el.h / 2;
+
+    // FIX: chiếu world coords của child về local space của parent đúng cách
     childSnaps.forEach(function(s) {
       var c = s.el;
       var par = getEl(c.parentId);
@@ -285,21 +318,22 @@ function startScaleHandle(el, pos, e) {
       var pr = (pa.rot || 0) * Math.PI / 180;
       var relX = s.ax + c.w / 2 - pcx;
       var relY = s.ay + c.h / 2 - pcy;
-      var cos = Math.cos(-pr), sin = Math.sin(-pr);
-      c.x = relX * cos - relY * sin;
-      c.y = relX * sin + relY * cos;
+      // FIX: dấu sin đúng khi xoay ngược (-pr)
+      c.x =  relX * Math.cos(-pr) - relY * Math.sin(-pr);
+      c.y =  relX * Math.sin(-pr) + relY * Math.cos(-pr);
       renderEl(c);
     });
+
     renderEl(el);
     renderProps();
     updInfo(el);
     updateRuler(el);
-    // FIX: dùng AABB (rotated bounds) thay vì el.x/y thô
     var b = getRotatedBounds(el);
     drawResizeGuides(b.x, b.y, b.w, b.h);
     drawBoundingBox(b.x, b.y, b.w, b.h);
     drawDistanceGuides(b.x, b.y, b.w, b.h);
   }
+
   function mu() {
     clearResizeGuides();
     document.removeEventListener('mousemove', mm);
@@ -311,7 +345,6 @@ function startScaleHandle(el, pos, e) {
 
 function startRotate(el, e) {
   saveH();
-  // FIX: tính tâm xoay từ canvas coords thay vì getBoundingClientRect()
   var ap = getAbsPos(el);
   var caRect = document.getElementById('ca').getBoundingClientRect();
   var screenCX = ap.x + el.w / 2 + caRect.left;
@@ -325,7 +358,6 @@ function startRotate(el, e) {
     renderEl(el);
     updInfo(el);
     getDescendants(el.id).forEach(renderEl);
-    // FIX: update tất cả guides khi đang xoay
     if (rulerOn) updateRuler(el);
     var b = getRotatedBounds(el);
     drawBoundingBox(b.x, b.y, b.w, b.h);
@@ -333,7 +365,6 @@ function startRotate(el, e) {
     if (distGuideOn) drawDistanceGuides(b.x, b.y, b.w, b.h);
   }
   function mu() {
-    // FIX: xóa guides khi thả chuột
     clearResizeGuides();
     document.removeEventListener('mousemove', mm);
     document.removeEventListener('mouseup', mu);
@@ -348,6 +379,7 @@ function startWarpCorner(el,key,e){
   function mu(){document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);}
   document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
 }
+
 function startWarpCtrl(el,key,e){
   saveH();if(!el.warp)initWarp(el);var sx=e.clientX,sy=e.clientY,ox=el.warp[key].x,oy=el.warp[key].y;
   function mm(ev){el.warp[key].x=ox+(ev.clientX-sx);el.warp[key].y=oy+(ev.clientY-sy);renderEl(el);}
@@ -362,12 +394,19 @@ function startDrag(el,e){
   var ov=document.getElementById('ruler-overlay');
   if(ov&&distGuideOn&&ov.style.display==='none')ov.style.display='block';
   function mm(ev){
-    if(isKid){el.x=slx+(ev.clientX-smx);el.y=sly+(ev.clientY-smy);}
-    else{el.x=Math.max(0,ev.clientX-ox);el.y=Math.max(0,ev.clientY-oy);}
+    if(isKid){
+      var par=getEl(el.parentId);
+      var absRot=par?((getAbsPos(par).rot||0)*Math.PI/180):0;
+      var sdx=ev.clientX-smx, sdy=ev.clientY-smy;
+      el.x=slx + sdx*Math.cos(absRot) + sdy*Math.sin(absRot);
+      el.y=sly - sdx*Math.sin(absRot) + sdy*Math.cos(absRot);
+    } else {
+      el.x=Math.max(0,ev.clientX-ox);
+      el.y=Math.max(0,ev.clientY-oy);
+    }
     snapGuides(el);renderEl(el);updInfo(el);updateRuler(el);
-    // FIX: dùng AABB khi drag để tia đỏ đúng với element đang xoay
-    var b = getRotatedBounds(el);
-    drawDistanceGuides(b.x, b.y, b.w, b.h);
+    var b=getRotatedBounds(el);
+    drawDistanceGuides(b.x,b.y,b.w,b.h);
     if(!isKid)getDescendants(el.id).forEach(renderEl);
   }
   function mu(ev){
@@ -381,6 +420,7 @@ function startDrag(el,e){
   }
   document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
 }
+
 function updInfo(el){document.getElementById('cinfo').textContent=el.type+' · '+Math.round(el.x)+','+Math.round(el.y)+' · '+Math.round(el.w)+'×'+Math.round(el.h)+(el.rot?' · '+(el.rot||0).toFixed(1)+'°':'');}
 
 // §10 SELECTION
