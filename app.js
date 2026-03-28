@@ -25,7 +25,7 @@ var els=[],sel=null,selGroup=[],tool='sel',idc=0,hist=[],dtool=null,etab='lua';
 var rulerOn=false;
 var tMode=0,TMODES=['Scale','Move','Rotate','All','Warp'],TICONS=['⤢','✥','↻','⊕','⌀'];
 var hierDrag=null;
-var VERSION='Alpha 0.0.6.16';
+var VERSION='Alpha 0.0.6.16.2';
 var distGuideOn=true;
 
 var DEFS={
@@ -388,8 +388,8 @@ function startRotate(el,e){
     return{
       el:c,
       relX:(c.x+c.w/2)-cx,
-      relY:(c.y+c.h/2)-cy,
-      rot:c.rot||0
+      relY:(c.y+c.h/2)-cy
+      // ĐÃ XÓA: rot không cần snapshot nữa
     };
   });
 
@@ -403,14 +403,14 @@ function startRotate(el,e){
     renderEl(el);
     updInfo(el);
 
-    // Xoay children quanh center của parent
+    // Xoay children quanh center của parent — nhưng GIỮ NGUYÊN rot của child
     var cos=Math.cos(dRad),sin=Math.sin(dRad);
     descSnaps.forEach(function(s){
       var newRelX=s.relX*cos-s.relY*sin;
       var newRelY=s.relX*sin+s.relY*cos;
       s.el.x=cx+newRelX-s.el.w/2;
       s.el.y=cy+newRelY-s.el.h/2;
-      s.el.rot=s.rot+dRot;
+      // ĐÃ XÓA: s.el.rot=s.rot+dRot → không cộng thêm rotation nữa
       renderEl(s.el);
     });
 
