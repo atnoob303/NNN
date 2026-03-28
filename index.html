@@ -18,6 +18,18 @@
   <button class="tbtn" onclick="layerUp()">↑ Fwd</button>
   <button class="tbtn" onclick="layerDn()">↓ Bck</button>
   <div class="sep"></div>
+  <div id="align-bar" style="display:none;gap:3px;align-items:center">
+    <button class="tbtn" title="Align Left"      onclick="alignLeft()">⬤◁</button>
+    <button class="tbtn" title="Center H"        onclick="alignCenterH()">⬤↔</button>
+    <button class="tbtn" title="Align Right"     onclick="alignRight()">▷⬤</button>
+    <button class="tbtn" title="Align Top"       onclick="alignTop()">⬤△</button>
+    <button class="tbtn" title="Center V"        onclick="alignCenterV()">⬤↕</button>
+    <button class="tbtn" title="Align Bottom"    onclick="alignBottom()">▽⬤</button>
+    <button class="tbtn cy" title="Distribute H" onclick="distributeH()">⇔</button>
+    <button class="tbtn cy" title="Distribute V" onclick="distributeV()">⇕</button>
+  </div>
+  <button class="tbtn" id="btn-ruler" onclick="toggleRuler()" title="Bật/tắt số đo">📏 Ruler</button>
+  <div class="sep"></div>
   <button class="tbtn rd" onclick="clearAll()">✕ Clear</button>
   <button class="tbtn yw" onclick="showExport()">⬇ Export Lua</button>
   <span id="cinfo" style="margin-left:auto;font-size:9px;color:var(--tx3);font-family:'JetBrains Mono',monospace"></span>
@@ -64,14 +76,15 @@
       <div id="eemp" class="el-emp">Chưa có element nào.<br>Click component để bắt đầu!</div>
     </div>
   </div>
-  <div id="ca">
+  <div id="ca" style="position:relative">
     <div class="gridbg"></div>
     <div id="cv">
       <div id="ehint">
         <div class="ehint-ic">🎮</div>
-        <div class="ehint-tx">Click component bên trái rồi kéo vẽ<br><span style="font-size:9px;color:var(--tx3)">Delete · Ctrl+Z · Ctrl+D · Arrow keys</span></div>
+        <div class="ehint-tx">Click component bên trái rồi kéo vẽ<br><span style="font-size:9px;color:var(--tx3)">Delete · Ctrl+Z · Ctrl+D · Arrow keys · Shift+Click để multi-select</span></div>
       </div>
     </div>
+    <div id="ruler-overlay" style="display:none;position:absolute;inset:0;pointer-events:none;z-index:500"></div>
   </div>
   <div id="rp"><div id="pp"><div class="no-sel">Chọn một element<br>để xem Properties</div></div></div>
 </div>
