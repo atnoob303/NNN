@@ -176,7 +176,7 @@ function renderEl(el){
   d.dataset.type=el.type;d.dataset.parentId=el.parentId||'';
   var ap=getAbsPos(el);
   var dx=el.parentId?ap.x:el.x,dy=el.parentId?ap.y:el.y,dr=el.parentId?ap.rot:(el.rot||0);
-  d.style.cssText='position:absolute;cursor:move;left:'+dx+'px;top:'+dy+'px;width:'+el.w+'px;height:'+el.h+'px;z-index:'+((el.zi||0)+1)+';opacity:'+(el.op||1)+';display:'+(el.vis===false?'none':'')+';transform:rotate('+dr+'deg);transform-origin:center center;outline:none;border:none;';
+  d.style.cssText='position:absolute;cursor:'+(tool==='drw'?'crosshair':'move')+';left:'+dx+'px;top:'+dy+'px;width:'+el.w+'px;height:'+el.h+'px;z-index:'+((el.zi||0)+1)+';opacity:'+(el.op||1)+';display:'+(el.vis===false?'none':'')+';transform:rotate('+dr+'deg);transform-origin:center center;outline:none;border:none;';
   var m=el.mods||{};
   if(m.UIGradient&&m.UIGradient.en!==false){var g=m.UIGradient;d.style.background='linear-gradient('+(g.rot||0)+'deg,'+g.c0+','+g.c1+')';}
   else d.style.background=rgb(el.bc)||el.bg;
@@ -205,10 +205,9 @@ function renderEl(el){
   if(el.type==='ViewportFrame'){var ph=document.createElement('div');ph.style.cssText='position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:22px;opacity:.4;pointer-events:none;flex-direction:column;gap:3px';ph.innerHTML='📦<div style="font-size:9px;color:#60a5fa;font-family:monospace">3D</div>';d.appendChild(ph);}
   if(el.type==='ScrollingFrame'){var sb=document.createElement('div');sb.style.cssText='position:absolute;right:0;top:0;bottom:0;width:'+(el.sbt||6)+'px;background:'+rgb(el.sbc)+';opacity:.4;border-radius:3px';d.appendChild(sb);}
   if(el.type==='ScreenGui'){d.style.border='1px dashed rgba(34,211,238,.3)';var lb=document.createElement('div');lb.style.cssText='position:absolute;top:3px;left:4px;font-size:8px;color:#22d3ee;font-family:monospace;opacity:.6;font-weight:700;pointer-events:none';lb.textContent='⊡ ScreenGui';d.appendChild(lb);}
-  // Chỉ hiện transform handles nếu là element được chọn ĐƠN LẺ
-// Khi trong group (selGroup.length > 1) thì không cho resize riêng
-if(inGroup && selGroup.length===1) addTransformHandles(d,el);
+  if(inGroup && selGroup.length===1) addTransformHandles(d,el);
   d.onmousedown=function(e){
+    if(tool==='drw')return; // Không chặn event khi đang draw
     if(e.target.classList.contains('rh')||e.target.classList.contains('wh')||e.target.classList.contains('roth'))return;
     e.stopPropagation();
     if(e.shiftKey){
