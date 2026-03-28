@@ -26,7 +26,8 @@ var els=[],sel=null,selGroup=[],tool='sel',idc=0,hist=[],dtool=null,etab='lua';
 var rulerOn=false;
 var tMode=0,TMODES=['Scale','Move','Rotate','All','Warp'],TICONS=['⤢','✥','↻','⊕','⌀'];
 var hierDrag=null;
-var VERSION='Alpha 0.0.6.4';
+var VERSION='Alpha 0.0.6.5';
+var distGuideOn=true; // tia đỏ khoảng cách, mặc định bật
 
 var DEFS={
   Frame:         {bg:'#222236',bc:{r:34,g:34,b:54},  bdc:{r:62,g:62,b:96}, bdw:0,cr:0,op:1,zi:0,vis:true,ax:0,ay:0,psx:0,psy:0,ssx:0,ssy:0,rot:0},
@@ -260,9 +261,18 @@ function startScaleHandle(el,pos,e){
     if(pos==='tl'||pos==='tc'||pos==='tr'){nh=Math.max(20,oh-dy);ny=oy+oh-nh;}
     if(sq&&(pos==='tl'||pos==='tr'||pos==='bl'||pos==='br')){var s=Math.max(nw,nh);nw=s;nh=s;if(pos==='tl'){nx=ox+ow-s;ny=oy+oh-s;}if(pos==='tr')ny=oy+oh-s;if(pos==='bl')nx=ox+ow-s;}
     if(pos==='tc'||pos==='bc'){nw=ow;nx=ox;}if(pos==='ml'||pos==='mr'){nh=oh;ny=oy;}
-    el.w=nw;el.h=nh;el.x=nx;el.y=ny;renderEl(el);renderProps();updInfo(el);updateRuler(el);getDescendants(el.id).forEach(renderEl);
+    el.w=nw;el.h=nh;el.x=nx;el.y=ny;
+    renderEl(el);renderProps();updInfo(el);updateRuler(el);
+    drawResizeGuides(el);
+    drawBoundingBox(el.x,el.y,el.w,el.h);
+    drawDistanceGuides(el.x,el.y,el.w,el.h);
+    getDescendants(el.id).forEach(renderEl);
   }
-  function mu(){document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);}
+  function mu(){
+    clearResizeGuides();
+    document.removeEventListener('mousemove',mm);
+    document.removeEventListener('mouseup',mu);
+  }
   document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
 }
 function startRotate(el,e){
@@ -490,31 +500,33 @@ ca.onmousedown=function(e){
   if(t!==ca&&t!==document.getElementById('cv')&&!t.classList.contains('gridbg'))return;
 
   // DRAW MODE
-  if(tool==='drw'){
-    var r=ca.getBoundingClientRect(),ds={x:e.clientX-r.left,y:e.clientY-r.top};
-    var el=mkEl(dtool||'Frame',ds.x,ds.y,10,10);
-    saveH();els.push(el);renderEl(el);selEl(el.id);hint();
-    // Lưu lại element đang vẽ để Ctrl+P dùng
-    window._drawingEl=el;
-    function mm(ev){
-      var nx=ev.clientX-r.left,ny=ev.clientY-r.top;
-      el.x=Math.min(ds.x,nx);el.y=Math.min(ds.y,ny);
-      var rw=Math.abs(nx-ds.x)||10,rh=Math.abs(ny-ds.y)||10;
-      if(ev.shiftKey){var s=Math.max(rw,rh);el.w=s;el.h=s;}else{el.w=rw;el.h=rh;}
-      renderEl(el);updInfo(el);
-    }
-    function mu(){
-      if(el.w<20)el.w=DW[el.type]||160;
-      if(el.h<20)el.h=DH[el.type]||80;
-      renderEl(el);renderProps();setTool('sel');dtool=null;
-      window._drawingEl=null;
-      document.removeEventListener('mousemove',mm);
-      document.removeEventListener('mouseup',mu);
-    }
-    document.addEventListener('mousemove',mm);
-    document.addEventListener('mouseup',mu);
-    return;
+if(tool==='drw'){
+  var r=ca.getBoundingClientRect(),ds={x:e.clientX-r.left,y:e.clientY-r.top};
+  var el=mkEl(dtool||'Frame',ds.x,ds.y,10,10);
+  saveH();els.push(el);renderEl(el);selEl(el.id);hint();
+  window._drawingEl=el;
+  function mm(ev){
+    var nx=ev.clientX-r.left,ny=ev.clientY-r.top;
+    el.x=Math.min(ds.x,nx);el.y=Math.min(ds.y,ny);
+    var rw=Math.abs(nx-ds.x)||10,rh=Math.abs(ny-ds.y)||10;
+    if(ev.shiftKey){var s=Math.max(rw,rh);el.w=s;el.h=s;}else{el.w=rw;el.h=rh;}
+    renderEl(el);updInfo(el);
+    drawBoundingBox(el.x,el.y,el.w,el.h);
+    drawDistanceGuides(el.x,el.y,el.w,el.h);
   }
+  function mu(){
+    if(el.w<20)el.w=DW[el.type]||160;
+    if(el.h<20)el.h=DH[el.type]||80;
+    clearResizeGuides();
+    renderEl(el);renderProps();setTool('sel');dtool=null;
+    window._drawingEl=null;
+    document.removeEventListener('mousemove',mm);
+    document.removeEventListener('mouseup',mu);
+  }
+  document.addEventListener('mousemove',mm);
+  document.addEventListener('mouseup',mu);
+  return;
+}
 
   // SELECT MODE — drag-to-select
   if(tool==='sel'&&!e.shiftKey){
@@ -1220,53 +1232,177 @@ function toggleRuler(){
   toast(rulerOn?'📏 Ruler ON':'📏 Ruler OFF');
 }
 
-// Ruler cho element đơn lẻ (tia xanh)
+function toggleDistGuide(){
+  distGuideOn=!distGuideOn;
+  var btn=document.getElementById('btn-distguide');
+  if(btn)btn.classList.toggle('active',distGuideOn);
+  if(!distGuideOn){
+    var ov=document.getElementById('ruler-overlay');
+    if(ov)ov.querySelectorAll('.rul-dist').forEach(function(e){e.remove();});
+  }
+  toast(distGuideOn?'📐 Dist Guide ON':'📐 Dist Guide OFF');
+}
+
+// Ruler đơn lẻ — tia xanh
 function updateRuler(el){
   if(!rulerOn||!el)return;
   var ov=document.getElementById('ruler-overlay');
   if(!ov)return;
+  ov.querySelectorAll('.rul-single').forEach(function(e){e.remove();});
   var x=Math.round(el.x),y=Math.round(el.y),w=Math.round(el.w),h=Math.round(el.h);
-  // Giữ lại ruler group nếu có, chỉ update single
-  var existing=ov.querySelector('.rul-group-layer');
-  ov.innerHTML=
-    '<div class="rul-line rul-h" style="top:'+y+'px;border-color:#22d3ee"></div>'+
-    '<div class="rul-line rul-h" style="top:'+(y+h)+'px;border-color:#22d3ee"></div>'+
-    '<div class="rul-line rul-v" style="left:'+x+'px;border-color:#22d3ee"></div>'+
-    '<div class="rul-line rul-v" style="left:'+(x+w)+'px;border-color:#22d3ee"></div>'+
-    '<div class="rul-lbl" style="left:'+(x+w/2)+'px;top:'+(y-18)+'px;color:#22d3ee">W: '+w+'px</div>'+
-    '<div class="rul-lbl" style="left:'+(x+w+8)+'px;top:'+(y+h/2)+'px;color:#22d3ee">H: '+h+'px</div>'+
-    '<div class="rul-lbl" style="left:'+(x+2)+'px;top:'+(y+2)+'px;color:#22d3ee">'+x+', '+y+'</div>';
+  var html='';
+  html+='<div class="rul-single rul-line rul-h" style="top:'+y+'px;border-color:#22d3ee"></div>';
+  html+='<div class="rul-single rul-line rul-h" style="top:'+(y+h)+'px;border-color:#22d3ee"></div>';
+  html+='<div class="rul-single rul-line rul-v" style="left:'+x+'px;border-color:#22d3ee"></div>';
+  html+='<div class="rul-single rul-line rul-v" style="left:'+(x+w)+'px;border-color:#22d3ee"></div>';
+  html+='<div class="rul-single rul-lbl" style="left:'+(x+w/2)+'px;top:'+(y-18)+'px;color:#22d3ee">W: '+w+'px</div>';
+  html+='<div class="rul-single rul-lbl" style="left:'+(x+w+8)+'px;top:'+(y+h/2)+'px;color:#22d3ee">H: '+h+'px</div>';
+  html+='<div class="rul-single rul-lbl" style="left:'+(x+2)+'px;top:'+(y+2)+'px;color:#22d3ee">'+x+', '+y+'</div>';
+  var tmp=document.createElement('div');tmp.innerHTML=html;
+  while(tmp.firstChild)ov.appendChild(tmp.firstChild);
 }
 
-// Ruler cho group: tia xanh = bounding box ngoài, tia vàng = từng element bên trong
-function updateRulerGroup(bounds, grp){
+// Ruler group — tia xanh ngoài + vàng trong
+function updateRulerGroup(bounds,grp){
   if(!rulerOn)return;
   var ov=document.getElementById('ruler-overlay');
   if(!ov)return;
-  var html='';
+  ov.querySelectorAll('.rul-single').forEach(function(e){e.remove();});
   var bx=Math.round(bounds.x),by=Math.round(bounds.y),bw=Math.round(bounds.w),bh=Math.round(bounds.h);
-
-  // Tia XANH — bounding box của cả group
-  html+=
-    '<div class="rul-line rul-h" style="top:'+by+'px;border-color:#22d3ee;opacity:.9"></div>'+
-    '<div class="rul-line rul-h" style="top:'+(by+bh)+'px;border-color:#22d3ee;opacity:.9"></div>'+
-    '<div class="rul-line rul-v" style="left:'+bx+'px;border-color:#22d3ee;opacity:.9"></div>'+
-    '<div class="rul-line rul-v" style="left:'+(bx+bw)+'px;border-color:#22d3ee;opacity:.9"></div>'+
-    '<div class="rul-lbl" style="left:'+(bx+bw/2)+'px;top:'+(by-18)+'px;color:#22d3ee">W: '+bw+'px</div>'+
-    '<div class="rul-lbl" style="left:'+(bx+bw+8)+'px;top:'+(by+bh/2)+'px;color:#22d3ee">H: '+bh+'px</div>';
-
+  var html='';
+  // Tia XANH — bounding box group
+  html+='<div class="rul-single rul-line rul-h" style="top:'+by+'px;border-color:#22d3ee;opacity:.9"></div>';
+  html+='<div class="rul-single rul-line rul-h" style="top:'+(by+bh)+'px;border-color:#22d3ee;opacity:.9"></div>';
+  html+='<div class="rul-single rul-line rul-v" style="left:'+bx+'px;border-color:#22d3ee;opacity:.9"></div>';
+  html+='<div class="rul-single rul-line rul-v" style="left:'+(bx+bw)+'px;border-color:#22d3ee;opacity:.9"></div>';
+  html+='<div class="rul-single rul-lbl" style="left:'+(bx+bw/2)+'px;top:'+(by-18)+'px;color:#22d3ee">W: '+bw+'px</div>';
+  html+='<div class="rul-single rul-lbl" style="left:'+(bx+bw+8)+'px;top:'+(by+bh/2)+'px;color:#22d3ee">H: '+bh+'px</div>';
   // Tia VÀNG — từng element trong group
   grp.forEach(function(el){
     var x=Math.round(el.x),y=Math.round(el.y),w=Math.round(el.w),h=Math.round(el.h);
-    html+=
-      '<div class="rul-line rul-h" style="top:'+y+'px;border-color:#fbbf24;opacity:.5"></div>'+
-      '<div class="rul-line rul-h" style="top:'+(y+h)+'px;border-color:#fbbf24;opacity:.5"></div>'+
-      '<div class="rul-line rul-v" style="left:'+x+'px;border-color:#fbbf24;opacity:.5"></div>'+
-      '<div class="rul-line rul-v" style="left:'+(x+w)+'px;border-color:#fbbf24;opacity:.5"></div>'+
-      '<div class="rul-lbl" style="left:'+(x+2)+'px;top:'+(y+2)+'px;color:#fbbf24;font-size:8px">'+el.name+'</div>';
+    html+='<div class="rul-single rul-line rul-h" style="top:'+y+'px;border-color:#fbbf24;opacity:.5"></div>';
+    html+='<div class="rul-single rul-line rul-h" style="top:'+(y+h)+'px;border-color:#fbbf24;opacity:.5"></div>';
+    html+='<div class="rul-single rul-line rul-v" style="left:'+x+'px;border-color:#fbbf24;opacity:.5"></div>';
+    html+='<div class="rul-single rul-line rul-v" style="left:'+(x+w)+'px;border-color:#fbbf24;opacity:.5"></div>';
+    html+='<div class="rul-single rul-lbl" style="left:'+(x+2)+'px;top:'+(y+2)+'px;color:#fbbf24;font-size:8px">'+el.name+'</div>';
   });
+  var tmp=document.createElement('div');tmp.innerHTML=html;
+  while(tmp.firstChild)ov.appendChild(tmp.firstChild);
+}
 
-  ov.innerHTML=html;
+// Khung NÂU — bounding box khi draw/resize
+function drawBoundingBox(x,y,w,h){
+  var ov=document.getElementById('ruler-overlay');
+  if(!ov)return;
+  ov.querySelectorAll('.rul-bbox').forEach(function(e){e.remove();});
+  var color='#a16207';
+  var lines=[
+    'top:'+y+'px;left:'+x+'px;width:'+w+'px;height:1px',
+    'top:'+(y+h)+'px;left:'+x+'px;width:'+w+'px;height:1px',
+    'top:'+y+'px;left:'+x+'px;width:1px;height:'+h+'px',
+    'top:'+y+'px;left:'+(x+w)+'px;width:1px;height:'+h+'px'
+  ];
+  lines.forEach(function(s){
+    var d=document.createElement('div');
+    d.className='rul-bbox';
+    d.style.cssText='position:absolute;background:'+color+';opacity:.7;pointer-events:none;z-index:710;'+s;
+    ov.appendChild(d);
+  });
+  var lb=document.createElement('div');
+  lb.className='rul-bbox rul-lbl';
+  lb.style.cssText='left:'+(x+w/2)+'px;top:'+(y-16)+'px;color:#a16207;background:rgba(13,13,20,.8);transform:translateX(-50%);';
+  lb.textContent=Math.round(w)+'×'+Math.round(h);
+  ov.appendChild(lb);
+}
+
+// Tia VÀNG — canh chỉnh khi resize
+function drawResizeGuides(el){
+  var ov=document.getElementById('ruler-overlay');
+  if(!ov||!rulerOn)return;
+  ov.querySelectorAll('.rul-resize').forEach(function(e){e.remove();});
+  var x=Math.round(el.x),y=Math.round(el.y),w=Math.round(el.w),h=Math.round(el.h);
+  var color='#fbbf24';
+  var lines=[
+    'top:'+y+'px;left:0;right:0;height:0;border-top:1px solid '+color,
+    'top:'+(y+h)+'px;left:0;right:0;height:0;border-top:1px solid '+color,
+    'top:0;bottom:0;left:'+x+'px;width:0;border-left:1px solid '+color,
+    'top:0;bottom:0;left:'+(x+w)+'px;width:0;border-left:1px solid '+color
+  ];
+  lines.forEach(function(s){
+    var d=document.createElement('div');
+    d.className='rul-resize';
+    d.style.cssText='position:absolute;opacity:.55;pointer-events:none;z-index:709;'+s;
+    ov.appendChild(d);
+  });
+  var lbls=[
+    {text:'W: '+w,css:'left:'+(x+w/2)+'px;top:'+(y-16)+'px;transform:translateX(-50%);color:#fbbf24'},
+    {text:'H: '+h,css:'left:'+(x+w+6)+'px;top:'+(y+h/2)+'px;transform:translateY(-50%);color:#fbbf24'},
+    {text:x+', '+y,css:'left:'+(x+2)+'px;top:'+(y+2)+'px;color:#fbbf24'}
+  ];
+  lbls.forEach(function(l){
+    var d=document.createElement('div');
+    d.className='rul-resize rul-lbl';
+    d.style.cssText=l.css+';background:rgba(13,13,20,.8);';
+    d.textContent=l.text;
+    ov.appendChild(d);
+  });
+}
+
+// Tia ĐỎ — khoảng cách dạng đoạn ngắn overflow, mờ dần
+var DIST_INTERVALS=[5,8,12,15];
+function drawDistanceGuides(x,y,w,h){
+  if(!distGuideOn)return;
+  var ov=document.getElementById('ruler-overlay');
+  if(!ov)return;
+  ov.querySelectorAll('.rul-dist').forEach(function(e){e.remove();});
+  var opacities=[0.75,0.55,0.38,0.22];
+  var OVERFLOW=10; // px nhô ra mỗi đầu
+
+  DIST_INTERVALS.forEach(function(dist,i){
+    var op=opacities[i];
+    var color='rgba(239,68,68,'+op+')';
+
+    // Tia NGANG trên/dưới — dài = w + OVERFLOW*2, nhô ra 2 đầu
+    [y-dist, y+h+dist].forEach(function(ty){
+      var d=document.createElement('div');
+      d.className='rul-dist';
+      d.style.cssText=[
+        'position:absolute',
+        'pointer-events:none',
+        'z-index:708',
+        'left:'+(x-OVERFLOW)+'px',
+        'top:'+ty+'px',
+        'width:'+(w+OVERFLOW*2)+'px',
+        'height:0',
+        'border-top:1px dashed '+color
+      ].join(';');
+      ov.appendChild(d);
+    });
+
+    // Tia DỌC trái/phải — cao = h + OVERFLOW*2, nhô ra 2 đầu
+    [x-dist, x+w+dist].forEach(function(lx){
+      var d=document.createElement('div');
+      d.className='rul-dist';
+      d.style.cssText=[
+        'position:absolute',
+        'pointer-events:none',
+        'z-index:708',
+        'left:'+lx+'px',
+        'top:'+(y-OVERFLOW)+'px',
+        'width:0',
+        'height:'+(h+OVERFLOW*2)+'px',
+        'border-left:1px dashed '+color
+      ].join(';');
+      ov.appendChild(d);
+    });
+  });
+}
+
+// Xóa tia vàng resize + nâu bbox + đỏ dist
+function clearResizeGuides(){
+  var ov=document.getElementById('ruler-overlay');
+  if(!ov)return;
+  ov.querySelectorAll('.rul-bbox,.rul-resize,.rul-dist').forEach(function(e){e.remove();});
 }
 
 // §21 SMART GUIDES
