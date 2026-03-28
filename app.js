@@ -25,7 +25,7 @@ var els=[],sel=null,selGroup=[],tool='sel',idc=0,hist=[],dtool=null,etab='lua';
 var rulerOn=false;
 var tMode=0,TMODES=['Scale','Move','Rotate','All','Warp'],TICONS=['⤢','✥','↻','⊕','⌀'];
 var hierDrag=null;
-var VERSION='Alpha 0.0.6.13';
+var VERSION='Alpha 0.0.6.14';
 var distGuideOn=true;
 
 var DEFS={
@@ -67,55 +67,51 @@ function getEl(id){return els.find(function(e){return e.id===id;});}
 
 // §3 PARENT / CHILDREN
 function getAbsPos(el){
-  if(!el.parentId)return{x:el.x,y:el.y,rot:el.rot||0};
-  var par=getEl(el.parentId);
-  if(!par){el.parentId=null;return{x:el.x,y:el.y,rot:el.rot||0};}
-  var pa=getAbsPos(par),pcx=pa.x+par.w/2,pcy=pa.y+par.h/2,pr=(pa.rot||0)*Math.PI/180;
-  var rx=el.x*Math.cos(pr)-el.y*Math.sin(pr),ry=el.x*Math.sin(pr)+el.y*Math.cos(pr);
-  return{x:pcx+rx-el.w/2,y:pcy+ry-el.h/2,rot:(pa.rot||0)+(el.rot||0)};
+  return{x:el.x, y:el.y, rot:el.rot||0};
 }
 
 function getRotatedBounds(el){
-  var ap=getAbsPos(el);
-  var cx=ap.x+el.w/2,cy=ap.y+el.h/2;
-  var r=(ap.rot||0)*Math.PI/180;
-  var hw=el.w/2,hh=el.h/2;
-  var cos=Math.abs(Math.cos(r)),sin=Math.abs(Math.sin(r));
-  var bw=hw*cos+hh*sin,bh=hw*sin+hh*cos;
-  return{x:cx-bw,y:cy-bh,w:bw*2,h:bh*2};
+  var cx=el.x+el.w/2, cy=el.y+el.h/2;
+  var r=(el.rot||0)*Math.PI/180;
+  var hw=el.w/2, hh=el.h/2;
+  var cos=Math.abs(Math.cos(r)), sin=Math.abs(Math.sin(r));
+  var bw=hw*cos+hh*sin, bh=hw*sin+hh*cos;
+  return{x:cx-bw, y:cy-bh, w:bw*2, h:bh*2};
 }
 
-function getChildren(pid){return els.filter(function(e){return e.parentId===pid;});}
+function getChildren(pid){
+  return els.filter(function(e){return e.parentId===pid;});
+}
+
 function getDescendants(id){
   var r=[];
-  getChildren(id).forEach(function(c){r.push(c);getDescendants(c.id).forEach(function(d){r.push(d);});});
+  getChildren(id).forEach(function(c){
+    r.push(c);
+    getDescendants(c.id).forEach(function(d){r.push(d);});
+  });
   return r;
 }
+
 function isAncestor(anc,cid){
   var e=getEl(cid);
   if(!e||!e.parentId)return false;
   return e.parentId===anc||isAncestor(anc,e.parentId);
 }
+
 function unparent(el){
   if(!el||!el.parentId)return;
-  var a=getAbsPos(el);el.x=a.x;el.y=a.y;el.rot=a.rot;el.parentId=null;
+  // x,y đã là world coords → chỉ cần xóa parentId
+  el.parentId=null;
   renderEl(el);renderHier();toast('🔓 Unparented');
 }
+
 function getParentId(el){return el.parentId||null;}
-function setParent(dragged,newParentId){
-  if(dragged.parentId){
-    var abs=getAbsPos(dragged);
-    dragged.x=abs.x;dragged.y=abs.y;dragged.rot=abs.rot||0;
-    dragged.parentId=null;
-  }
-  if(!newParentId){return;}
-  var par=getEl(newParentId);
-  if(!par)return;
-  dragged.parentId=newParentId;
-  var pa=getAbsPos(par),pcx=pa.x+par.w/2,pcy=pa.y+par.h/2;
-  dragged.x=dragged.x-pcx+dragged.w/2;
-  dragged.y=dragged.y-pcy+dragged.h/2;
+
+function setParent(dragged, newParentId){
+  // x,y luôn là world coords — không cần convert gì cả
+  dragged.parentId=newParentId||null;
 }
+
 function reorderEl(draggedId,targetId,position){
   var di=els.findIndex(function(e){return e.id===draggedId;});
   var ti=els.findIndex(function(e){return e.id===targetId;});
@@ -125,14 +121,15 @@ function reorderEl(draggedId,targetId,position){
   if(position==='after')ti++;
   els.splice(ti,0,dragged);
 }
+
 function tryReparent(drag){
   if(!drag)return;
-  var dcx=drag.x+drag.w/2,dcy=drag.y+drag.h/2,best=null,bestA=0;
+  var dcx=drag.x+drag.w/2, dcy=drag.y+drag.h/2, best=null, bestA=0;
   els.forEach(function(el){
     if(el.id===drag.id||isAncestor(el.id,drag.id))return;
-    var a=getAbsPos(el);
-    if(dcx>=a.x&&dcx<=a.x+el.w&&dcy>=a.y&&dcy<=a.y+el.h){
-      var area=el.w*el.h;if(area>bestA){bestA=area;best=el;}
+    if(dcx>=el.x&&dcx<=el.x+el.w&&dcy>=el.y&&dcy<=el.y+el.h){
+      var area=el.w*el.h;
+      if(area>bestA){bestA=area;best=el;}
     }
   });
   if(best&&best.id!==drag.parentId){
@@ -140,9 +137,47 @@ function tryReparent(drag){
     toast('📦 Parented to '+best.name);renderHier();
   }
 }
+
 function getElAbsXY(el){
-  var ap=getAbsPos(el);
-  return{x:ap.x,y:ap.y,w:el.w,h:el.h};
+  return{x:el.x,y:el.y,w:el.w,h:el.h};
+}
+
+function moveChildrenWithParent(parentId,dx,dy){
+  getChildren(parentId).forEach(function(c){
+    c.x+=dx; c.y+=dy;
+    moveChildrenWithParent(c.id,dx,dy);
+    renderEl(c);
+  });
+}
+
+function rotateChildrenWithParent(parentId,cx,cy,dRad){
+  getChildren(parentId).forEach(function(c){
+    var ccx=c.x+c.w/2, ccy=c.y+c.h/2;
+    var cos=Math.cos(dRad), sin=Math.sin(dRad);
+    var relX=ccx-cx, relY=ccy-cy;
+    var newCX=cx+relX*cos-relY*sin;
+    var newCY=cy+relX*sin+relY*cos;
+    c.x=newCX-c.w/2;
+    c.y=newCY-c.h/2;
+    c.rot=(c.rot||0)+dRad*180/Math.PI;
+    rotateChildrenWithParent(c.id,cx,cy,dRad);
+    renderEl(c);
+  });
+}
+
+function scaleChildrenWithParent(parentId,oldX,oldY,oldW,oldH,newX,newY,newW,newH){
+  if(oldW===0||oldH===0)return;
+  var scaleX=newW/oldW, scaleY=newH/oldH;
+  getChildren(parentId).forEach(function(c){
+    var relX=c.x-oldX;
+    var relY=c.y-oldY;
+    c.x=newX+relX*scaleX;
+    c.y=newY+relY*scaleY;
+    c.w=Math.max(10,c.w*scaleX);
+    c.h=Math.max(10,c.h*scaleY);
+    scaleChildrenWithParent(c.id,oldX,oldY,oldW,oldH,newX,newY,newW,newH);
+    renderEl(c);
+  });
 }
 
 // §4 TRANSFORM MODE
@@ -407,7 +442,11 @@ function startDrag(el,e){
     snapGuides(el);renderEl(el);updInfo(el);updateRuler(el);
     var b=getRotatedBounds(el);
     drawDistanceGuides(b.x,b.y,b.w,b.h);
-    if(!isKid)getDescendants(el.id).forEach(renderEl);
+    if(!isKid){
+  var dx2=el.x-slx, dy2=el.y-sly;
+  moveChildrenWithParent(el.id, dx2-(el.x-slx-(el.x-slx)), dy2-(el.y-sly-(el.y-sly)));
+  getDescendants(el.id).forEach(renderEl);
+}
   }
   function mu(ev){
     clearGuides();
