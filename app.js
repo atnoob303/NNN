@@ -25,7 +25,7 @@ var els=[],sel=null,selGroup=[],tool='sel',idc=0,hist=[],dtool=null,etab='lua';
 var rulerOn=false;
 var tMode=0,TMODES=['Scale','Move','Rotate','All','Warp'],TICONS=['⤢','✥','↻','⊕','⌀'];
 var hierDrag=null;
-var VERSION='Alpha 0.0.6.14';
+var VERSION='Alpha 0.0.6.15';
 var distGuideOn=true;
 
 var DEFS={
@@ -65,117 +65,214 @@ function hint(){var a=els.length>0;document.getElementById('ehint').style.displa
 function saveH(){hist.push(JSON.parse(JSON.stringify(els)));if(hist.length>50)hist.shift();}
 function getEl(id){return els.find(function(e){return e.id===id;});}
 
-// §3 PARENT / CHILDREN
-function getAbsPos(el){
-  // World coords trực tiếp — el.x, el.y luôn là tọa độ tuyệt đối
-  return {x:el.x, y:el.y, rot:el.rot||0};
+// ─────────────────────────────────────────────────────────────
+// §3  PARENT / CHILDREN  (viết lại hoàn toàn)
+// ─────────────────────────────────────────────────────────────
+ 
+// Lấy kích thước parent để tính UDim2
+// Nếu không có parent → dùng viewport (window.innerWidth/innerHeight)
+function getParentSize(el) {
+  if (el.parentId) {
+    var par = getEl(el.parentId);
+    if (par) return { w: par.w, h: par.h };
+  }
+  return { w: window.innerWidth, h: window.innerHeight };
 }
-
-function getRotatedBounds(el){
-  var cx=el.x+el.w/2, cy=el.y+el.h/2;
-  var r=(el.rot||0)*Math.PI/180;
-  var hw=el.w/2, hh=el.h/2;
-  var cos=Math.abs(Math.cos(r)), sin=Math.abs(Math.sin(r));
-  var bw=hw*cos+hh*sin, bh=hw*sin+hh*cos;
-  return{x:cx-bw, y:cy-bh, w:bw*2, h:bh*2};
+ 
+// Tính world pixel (x,y,w,h) từ UDim2 của element
+// Kết quả phụ thuộc vào world position của parent
+function calcWorldRect(el) {
+  var ps = getParentSize(el);
+  var w  = el.ssW * ps.w + el.soW;
+  var h  = el.ssH * ps.h + el.soH;
+  w = Math.max(10, w);
+  h = Math.max(10, h);
+  var lx = el.psX * ps.w + el.poX;   // local x trong parent
+  var ly = el.psY * ps.h + el.poY;   // local y trong parent
+ 
+  if (!el.parentId) {
+    // root: local = world
+    return { x: lx, y: ly, w: w, h: h };
+  }
+ 
+  // Chuyển local → world qua transform của parent
+  var par    = getEl(el.parentId);
+  var parW   = calcWorldRect(par);   // đệ quy
+  var pr     = (par.rot || 0) * Math.PI / 180;
+  var pcx    = parW.x + parW.w / 2;
+  var pcy    = parW.y + parW.h / 2;
+  // tâm con trong local space của cha (tính từ tâm cha)
+  var ox     = lx - parW.w / 2 + w / 2;
+  var oy     = ly - parW.h / 2 + h / 2;
+  var wcx    = pcx + ox * Math.cos(pr) - oy * Math.sin(pr);
+  var wcy    = pcy + ox * Math.sin(pr) + oy * Math.cos(pr);
+  return { x: wcx - w / 2, y: wcy - h / 2, w: w, h: h };
 }
-
-function getChildren(pid){return els.filter(function(e){return e.parentId===pid;});}
-function getDescendants(id){
-  var r=[];
-  getChildren(id).forEach(function(c){r.push(c);getDescendants(c.id).forEach(function(d){r.push(d);});});
+ 
+// Đồng bộ el.x, el.y, el.w, el.h từ UDim2 (gọi trước khi render)
+function syncWorldRect(el) {
+  var r = calcWorldRect(el);
+  el.x = r.x; el.y = r.y; el.w = r.w; el.h = r.h;
+}
+ 
+// Ghi ngược: từ world pixel → UDim2 (dùng sau khi drag/resize)
+// anchorLocal: vị trí góc trên-trái trong local space của cha (pixel)
+function setUDim2FromWorld(el, worldX, worldY, worldW, worldH) {
+  var ps = getParentSize(el);
+ 
+  if (!el.parentId) {
+    // root: scale = 0, offset = pixel thuần
+    el.psX = 0; el.poX = worldX;
+    el.psY = 0; el.poY = worldY;
+    el.ssW = 0; el.soW = Math.max(10, worldW);
+    el.ssH = 0; el.soH = Math.max(10, worldH);
+    el.x = worldX; el.y = worldY; el.w = el.soW; el.h = el.soH;
+    return;
+  }
+ 
+  // Chuyển world → local space của cha
+  var par  = getEl(el.parentId);
+  var parW = calcWorldRect(par);
+  var pr   = (par.rot || 0) * Math.PI / 180;
+  var pcx  = parW.x + parW.w / 2;
+  var pcy  = parW.y + parW.h / 2;
+  var wcx  = worldX + worldW / 2;
+  var wcy  = worldY + worldH / 2;
+  // xoay ngược
+  var dx   = wcx - pcx;
+  var dy   = wcy - pcy;
+  var lcx  =  dx * Math.cos(-pr) - dy * Math.sin(-pr);
+  var lcy  =  dx * Math.sin(-pr) + dy * Math.cos(-pr);
+  // góc trên-trái trong local space (gốc = góc trên-trái của cha)
+  var lx   = lcx - worldW / 2 + parW.w / 2;
+  var ly   = lcy - worldH / 2 + parW.h / 2;
+ 
+  // Giữ scale hiện tại, chỉ cập nhật offset
+  // (nếu muốn pure-scale thì đặt el.psX = lx/parW.w; el.poX = 0)
+  el.psX = el.psX || 0; el.poX = lx - el.psX * parW.w;
+  el.psY = el.psY || 0; el.poY = ly - el.psY * parW.h;
+  el.ssW = el.ssW || 0; el.soW = Math.max(10, worldW) - el.ssW * parW.w;
+  el.ssH = el.ssH || 0; el.soH = Math.max(10, worldH) - el.ssH * parW.h;
+  el.x = worldX; el.y = worldY; el.w = Math.max(10, worldW); el.h = Math.max(10, worldH);
+}
+ 
+// Phiên bản "pure scale" — lx/pw, không có offset px
+// Dùng khi muốn con luôn bám theo tỉ lệ cha khi resize
+function setUDim2PureScale(el, worldX, worldY, worldW, worldH) {
+  var par  = el.parentId ? getEl(el.parentId) : null;
+  var parW = par ? calcWorldRect(par) : { x: 0, y: 0, w: window.innerWidth, h: window.innerHeight };
+  var pr   = par ? (par.rot || 0) * Math.PI / 180 : 0;
+  var pcx  = parW.x + parW.w / 2;
+  var pcy  = parW.y + parW.h / 2;
+  var wcx  = worldX + worldW / 2;
+  var wcy  = worldY + worldH / 2;
+  var dx   = wcx - pcx;
+  var dy   = wcy - pcy;
+  var lcx  =  dx * Math.cos(-pr) - dy * Math.sin(-pr);
+  var lcy  =  dx * Math.sin(-pr) + dy * Math.cos(-pr);
+  var lx   = lcx - worldW / 2 + parW.w / 2;
+  var ly   = lcy - worldH / 2 + parW.h / 2;
+ 
+  if (!par) {
+    el.psX = 0; el.poX = worldX;
+    el.psY = 0; el.poY = worldY;
+  } else {
+    el.psX = lx / parW.w; el.poX = 0;
+    el.psY = ly / parW.h; el.poY = 0;
+  }
+  el.ssW = 0; el.soW = Math.max(10, worldW);
+  el.ssH = 0; el.soH = Math.max(10, worldH);
+  el.x = worldX; el.y = worldY; el.w = el.soW; el.h = el.soH;
+}
+ 
+// getAbsPos — trả về world coords (x,y) + rot tổng
+function getAbsPos(el) {
+  var r = calcWorldRect(el);
+  // rot tổng = rot cha + rot con (đệ quy)
+  var totalRot = el.rot || 0;
+  if (el.parentId) {
+    var par = getEl(el.parentId);
+    if (par) totalRot += (getAbsPos(par).rot || 0);
+  }
+  return { x: r.x, y: r.y, rot: totalRot };
+}
+ 
+function getRotatedBounds(el) {
+  syncWorldRect(el);
+  var cx = el.x + el.w / 2, cy = el.y + el.h / 2;
+  var r  = (el.rot || 0) * Math.PI / 180;
+  var hw = el.w / 2, hh = el.h / 2;
+  var cos = Math.abs(Math.cos(r)), sin = Math.abs(Math.sin(r));
+  var bw = hw * cos + hh * sin, bh = hw * sin + hh * cos;
+  return { x: cx - bw, y: cy - bh, w: bw * 2, h: bh * 2 };
+}
+ 
+function getChildren(pid)    { return els.filter(function(e) { return e.parentId === pid; }); }
+function getDescendants(id) {
+  var r = [];
+  getChildren(id).forEach(function(c) { r.push(c); getDescendants(c.id).forEach(function(d) { r.push(d); }); });
   return r;
 }
-function isAncestor(anc,cid){
-  var e=getEl(cid);
-  if(!e||!e.parentId)return false;
-  return e.parentId===anc||isAncestor(anc,e.parentId);
+function isAncestor(anc, cid) {
+  var e = getEl(cid);
+  if (!e || !e.parentId) return false;
+  return e.parentId === anc || isAncestor(anc, e.parentId);
 }
-
-function unparent(el){
-  if(!el||!el.parentId)return;
-  // x,y đã là world coords rồi, chỉ cần xóa parentId
-  el.parentId=null;
-  renderEl(el);renderHier();toast('🔓 Unparented');
+ 
+function unparent(el) {
+  if (!el || !el.parentId) return;
+  // sync world trước khi bỏ parent, rồi ghi lại dưới dạng root UDim2
+  syncWorldRect(el);
+  setUDim2FromWorld(el, el.x, el.y, el.w, el.h);
+  el.parentId = null;
+  renderEl(el); renderHier(); toast('🔓 Unparented');
 }
-
-function getParentId(el){return el.parentId||null;}
-
-function setParent(dragged, newParentId){
-  // x,y luôn là world coords, không cần convert
-  dragged.parentId = newParentId||null;
+ 
+function setParent(dragged, newParentId) {
+  // sync world coords hiện tại
+  syncWorldRect(dragged);
+  var wx = dragged.x, wy = dragged.y, ww = dragged.w, wh = dragged.h;
+  dragged.parentId = newParentId || null;
+  // tính lại UDim2 trong context của parent mới
+  setUDim2FromWorld(dragged, wx, wy, ww, wh);
 }
-
-function reorderEl(draggedId,targetId,position){
-  var di=els.findIndex(function(e){return e.id===draggedId;});
-  var ti=els.findIndex(function(e){return e.id===targetId;});
-  if(di<0||ti<0||di===ti)return;
-  var dragged=els.splice(di,1)[0];
-  ti=els.findIndex(function(e){return e.id===targetId;});
-  if(position==='after')ti++;
-  els.splice(ti,0,dragged);
+ 
+function reorderEl(draggedId, targetId, position) {
+  var di = els.findIndex(function(e) { return e.id === draggedId; });
+  var ti = els.findIndex(function(e) { return e.id === targetId; });
+  if (di < 0 || ti < 0 || di === ti) return;
+  var dragged = els.splice(di, 1)[0];
+  ti = els.findIndex(function(e) { return e.id === targetId; });
+  if (position === 'after') ti++;
+  els.splice(ti, 0, dragged);
 }
-
-function tryReparent(drag){
-  if(!drag)return;
-  var dcx=drag.x+drag.w/2, dcy=drag.y+drag.h/2, best=null, bestA=0;
-  els.forEach(function(el){
-    if(el.id===drag.id||isAncestor(el.id,drag.id))return;
-    if(dcx>=el.x&&dcx<=el.x+el.w&&dcy>=el.y&&dcy<=el.y+el.h){
-      var area=el.w*el.h;if(area>bestA){bestA=area;best=el;}
+ 
+function tryReparent(drag) {
+  if (!drag) return;
+  syncWorldRect(drag);
+  var dcx = drag.x + drag.w / 2, dcy = drag.y + drag.h / 2, best = null, bestA = 0;
+  els.forEach(function(el) {
+    if (el.id === drag.id || isAncestor(el.id, drag.id)) return;
+    syncWorldRect(el);
+    if (dcx >= el.x && dcx <= el.x + el.w && dcy >= el.y && dcy <= el.y + el.h) {
+      var area = el.w * el.h;
+      if (area > bestA) { bestA = area; best = el; }
     }
   });
-  if(best&&best.id!==drag.parentId){
-    setParent(drag,best.id);
-    toast('📦 Parented to '+best.name);renderHier();
+  if (best && best.id !== drag.parentId) {
+    setParent(drag, best.id);
+    toast('📦 Parented to ' + best.name); renderHier();
   }
 }
-
-function getElAbsXY(el){
-  return{x:el.x, y:el.y, w:el.w, h:el.h};
-}
-
-// Khi parent di chuyển, kéo tất cả children theo đúng offset
-function moveChildrenWithParent(parentId, dx, dy){
-  getChildren(parentId).forEach(function(c){
-    c.x += dx; c.y += dy;
-    moveChildrenWithParent(c.id, dx, dy);
+ 
+// Sync tất cả descendants sau khi parent thay đổi
+function syncDescendants(parentId) {
+  getChildren(parentId).forEach(function(c) {
+    syncWorldRect(c);
     renderEl(c);
+    syncDescendants(c.id);
   });
 }
-
-// Khi parent rotate quanh tâm của nó, xoay children theo
-function rotateChildrenWithParent(parentId, cx, cy, dRad){
-  getChildren(parentId).forEach(function(c){
-    var ccx = c.x + c.w/2, ccy = c.y + c.h/2;
-    var cos = Math.cos(dRad), sin = Math.sin(dRad);
-    var relX = ccx - cx, relY = ccy - cy;
-    var newCX = cx + relX*cos - relY*sin;
-    var newCY = cy + relX*sin + relY*cos;
-    c.x = newCX - c.w/2;
-    c.y = newCY - c.h/2;
-    c.rot = (c.rot||0) + dRad*180/Math.PI;
-    rotateChildrenWithParent(c.id, cx, cy, dRad);
-    renderEl(c);
-  });
-}
-
-// Khi parent resize, scale children theo tỉ lệ
-function scaleChildrenWithParent(parentId, oldX, oldY, oldW, oldH, newX, newY, newW, newH){
-  if(oldW===0||oldH===0)return;
-  var scaleX = newW/oldW, scaleY = newH/oldH;
-  getChildren(parentId).forEach(function(c){
-    var relX = c.x - oldX;
-    var relY = c.y - oldY;
-    c.x = newX + relX*scaleX;
-    c.y = newY + relY*scaleY;
-    c.w = Math.max(10, c.w*scaleX);
-    c.h = Math.max(10, c.h*scaleY);
-    scaleChildrenWithParent(c.id, oldX, oldY, oldW, oldH, newX, newY, newW, newH);
-    renderEl(c);
-  });
-}
-
 // §4 TRANSFORM MODE
 function cycleTransformMode(){
   tMode=(tMode+1)%TMODES.length;updateTransformUI();
@@ -282,89 +379,171 @@ function addWarpHandles(d,el){
   .forEach(function(c){var hd=document.createElement('div');hd.className='wh';hd.style.cssText='position:absolute;width:8px;height:8px;background:#22d3ee;border:2px solid var(--bg0);border-radius:50%;cursor:crosshair;z-index:102;'+c.s;hd.onmousedown=function(e){e.stopPropagation();e.preventDefault();startWarpCtrl(el,c.key,e);};d.appendChild(hd);});
 }
 
-// §9 DRAG & SCALE & ROTATE
+// ─────────────────────────────────────────────────────────────
+// §9  DRAG & SCALE & ROTATE  (viết lại hoàn toàn)
+// ─────────────────────────────────────────────────────────────
+ 
+function startDrag(el, e) {
+  if (selGroup.length > 1 && selGroup.indexOf(el.id) >= 0) { startGroupDrag(e); return; }
+  saveH();
+  syncWorldRect(el);
+ 
+  var startWX = el.x, startWY = el.y;
+  var smx = e.clientX, smy = e.clientY;
+ 
+  // Snapshot UDim2 của tất cả descendants (world coords tại thời điểm bắt đầu)
+  var descSnaps = getDescendants(el.id).map(function(c) {
+    syncWorldRect(c);
+    return { el: c, wx: c.x, wy: c.y };
+  });
+ 
+  var ov = document.getElementById('ruler-overlay');
+  if (ov && distGuideOn && ov.style.display === 'none') ov.style.display = 'block';
+ 
+  function mm(ev) {
+    var dx = ev.clientX - smx;
+    var dy = ev.clientY - smy;
+ 
+    // Nếu có parent: delta phải được chiếu về local space của cha
+    if (el.parentId) {
+      var par = getEl(el.parentId);
+      var pr  = (par.rot || 0) * Math.PI / 180;
+      var ldx =  dx * Math.cos(pr) + dy * Math.sin(pr);
+      var ldy = -dx * Math.sin(pr) + dy * Math.cos(pr);
+      var ps  = getParentSize(el);
+      el.poX  = (startWX - el.psX * ps.w) + ldx;   // giữ psX, cập nhật poX
+      // thực ra dễ hơn: tính world mới rồi ghi ngược
+      var newWX = startWX + dx;
+      var newWY = startWY + dy;
+      setUDim2FromWorld(el, newWX, newWY, el.w, el.h);
+    } else {
+      var newX = Math.max(0, startWX + dx);
+      var newY = Math.max(0, startWY + dy);
+      setUDim2FromWorld(el, newX, newY, el.w, el.h);
+    }
+ 
+    syncWorldRect(el);
+    snapGuides(el);
+ 
+    // Kéo descendants theo (delta world)
+    var totalDx = el.x - startWX;
+    var totalDy = el.y - startWY;
+    descSnaps.forEach(function(s) {
+      setUDim2FromWorld(s.el, s.wx + totalDx, s.wy + totalDy, s.el.w, s.el.h);
+      syncWorldRect(s.el);
+      renderEl(s.el);
+    });
+ 
+    renderEl(el); updInfo(el); updateRuler(el);
+    var b = getRotatedBounds(el);
+    drawDistanceGuides(b.x, b.y, b.w, b.h);
+  }
+ 
+  function mu(ev) {
+    clearGuides();
+    var ov = document.getElementById('ruler-overlay');
+    if (ov) ov.querySelectorAll('.rul-dist').forEach(function(e) { e.remove(); });
+    if (ov && !rulerOn && !distGuideOn) ov.style.display = 'none';
+    document.removeEventListener('mousemove', mm);
+    document.removeEventListener('mouseup', mu);
+    if (ev.altKey) { tryReparent(el); renderEl(el); }
+    renderHier();
+  }
+  document.addEventListener('mousemove', mm);
+  document.addEventListener('mouseup', mu);
+}
+ 
 function startScaleHandle(el, pos, e) {
   saveH();
+  syncWorldRect(el);
+ 
   var sx = e.clientX, sy = e.clientY;
   var ox = el.x, oy = el.y, ow = el.w, oh = el.h;
   var rot = (el.rot || 0) * Math.PI / 180;
-
+ 
+  // Điểm cố định (fixed point) đối diện với handle đang kéo — trong world coords
   var fixMap = {
-    tl:{lx: ow/2, ly: oh/2}, tc:{lx:0, ly: oh/2}, tr:{lx:-ow/2, ly: oh/2},
-    ml:{lx: ow/2, ly:0},                            mr:{lx:-ow/2, ly:0},
-    bl:{lx: ow/2, ly:-oh/2}, bc:{lx:0, ly:-oh/2},  br:{lx:-ow/2, ly:-oh/2}
+    tl:{ fx: ox + ow,  fy: oy + oh  },
+    tc:{ fx: ox + ow/2,fy: oy + oh  },
+    tr:{ fx: ox,       fy: oy + oh  },
+    ml:{ fx: ox + ow,  fy: oy + oh/2},
+    mr:{ fx: ox,       fy: oy + oh/2},
+    bl:{ fx: ox + ow,  fy: oy        },
+    bc:{ fx: ox + ow/2,fy: oy        },
+    br:{ fx: ox,       fy: oy        }
   };
-  var fix = fixMap[pos] || {lx:0, ly:0};
-
-  var ap = getAbsPos(el);
-  var startCX = ap.x + el.w / 2;
-  var startCY = ap.y + el.h / 2;
-
-  var childSnaps = getDescendants(el.id).map(function(c) {
-    var abs = getAbsPos(c);
-    return { el: c, ax: abs.x, ay: abs.y };
+  var fix = fixMap[pos];
+  var startCX = ox + ow / 2, startCY = oy + oh / 2;
+ 
+  // Snapshot descendants
+  var descSnaps = getDescendants(el.id).map(function(c) {
+    syncWorldRect(c);
+    return { el: c, wx: c.x, wy: c.y, ww: c.w, wh: c.h,
+             // tỉ lệ so với cha: dùng pure ratio
+             ratioX: (c.x - ox) / ow,
+             ratioY: (c.y - oy) / oh,
+             ratioW: c.w / ow,
+             ratioH: c.h / oh };
   });
-
+ 
   function mm(ev) {
     var dx = ev.clientX - sx, dy = ev.clientY - sy;
-
+    // chuyển delta sang local space của element (theo rot của chính nó)
     var lx =  dx * Math.cos(rot) + dy * Math.sin(rot);
     var ly = -dx * Math.sin(rot) + dy * Math.cos(rot);
-
+ 
     var nw = ow, nh = oh;
-
     if (pos === 'tr' || pos === 'mr' || pos === 'br') nw = Math.max(20, ow + lx);
     if (pos === 'tl' || pos === 'ml' || pos === 'bl') nw = Math.max(20, ow - lx);
     if (pos === 'bl' || pos === 'bc' || pos === 'br') nh = Math.max(20, oh + ly);
     if (pos === 'tl' || pos === 'tc' || pos === 'tr') nh = Math.max(20, oh - ly);
     if (pos === 'tc' || pos === 'bc') nw = ow;
     if (pos === 'ml' || pos === 'mr') nh = oh;
-
-    if (ev.shiftKey && (pos==='tl'||pos==='tr'||pos==='bl'||pos==='br')) {
+ 
+    if (ev.shiftKey && (pos === 'tl' || pos === 'tr' || pos === 'bl' || pos === 'br')) {
       var ratio = ow / oh;
       if (nw / nh > ratio) nh = nw / ratio; else nw = nh * ratio;
       nw = Math.max(20, nw); nh = Math.max(20, nh);
     }
-
-    el.w = nw; el.h = nh;
-
-    var newFixWorldX = startCX + fix.lx * (nw/ow) * Math.cos(rot) - fix.ly * (nh/oh) * Math.sin(rot);
-    var newFixWorldY = startCY + fix.lx * (nw/ow) * Math.sin(rot) + fix.ly * (nh/oh) * Math.cos(rot);
-    var origFixWorldX = startCX + fix.lx * Math.cos(rot) - fix.ly * Math.sin(rot);
-    var origFixWorldY = startCY + fix.lx * Math.sin(rot) + fix.ly * Math.cos(rot);
-
-    var newCX = startCX + (origFixWorldX - newFixWorldX);
-    var newCY = startCY + (origFixWorldY - newFixWorldY);
-
-    el.x = newCX - el.w / 2;
-    el.y = newCY - el.h / 2;
-
-    // FIX: chiếu world coords của child về local space của parent đúng cách
-    childSnaps.forEach(function(s) {
-      var c = s.el;
-      var par = getEl(c.parentId);
-      if (!par) return;
-      var pa = getAbsPos(par);
-      var pcx = pa.x + par.w / 2, pcy = pa.y + par.h / 2;
-      var pr = (pa.rot || 0) * Math.PI / 180;
-      var relX = s.ax + c.w / 2 - pcx;
-      var relY = s.ay + c.h / 2 - pcy;
-      // FIX: dấu sin đúng khi xoay ngược (-pr)
-      c.x =  relX * Math.cos(-pr) - relY * Math.sin(-pr);
-      c.y =  relX * Math.sin(-pr) + relY * Math.cos(-pr);
-      renderEl(c);
+ 
+    // Tính center mới sao cho fixed point không đổi
+    // fixed point trong local (trước scale):
+    var fixLX = fix.fx - startCX;  // relative to original center
+    var fixLY = fix.fy - startCY;
+    // local coords của fixed point sau scale (nw/ow, nh/oh)
+    var newFixLX = fixLX * (nw / ow);
+    var newFixLY = fixLY * (nh / oh);
+    // world coords của fixed point mới
+    var newFixWX = startCX + newFixLX * Math.cos(rot) - newFixLY * Math.sin(rot);
+    var newFixWY = startCY + newFixLX * Math.sin(rot) + newFixLY * Math.cos(rot);
+    // dịch chuyển center để fixed point quay về đúng vị trí cũ
+    var newCX = startCX + (fix.fx - newFixWX);
+    var newCY = startCY + (fix.fy - newFixWY);
+    var newX  = newCX - nw / 2;
+    var newY  = newCY - nh / 2;
+ 
+    // Ghi UDim2 cho parent
+    setUDim2FromWorld(el, newX, newY, nw, nh);
+    syncWorldRect(el);
+ 
+    // Scale descendants theo tỉ lệ
+    descSnaps.forEach(function(s) {
+      var cnx = newX + s.ratioX * nw;
+      var cny = newY + s.ratioY * nh;
+      var cnw = Math.max(10, s.ratioW * nw);
+      var cnh = Math.max(10, s.ratioH * nh);
+      setUDim2FromWorld(s.el, cnx, cny, cnw, cnh);
+      syncWorldRect(s.el);
+      renderEl(s.el);
     });
-
-    renderEl(el);
-    renderProps();
-    updInfo(el);
-    updateRuler(el);
+ 
+    renderEl(el); renderProps(); updInfo(el); updateRuler(el);
     var b = getRotatedBounds(el);
     drawResizeGuides(b.x, b.y, b.w, b.h);
     drawBoundingBox(b.x, b.y, b.w, b.h);
     drawDistanceGuides(b.x, b.y, b.w, b.h);
   }
-
+ 
   function mu() {
     clearResizeGuides();
     document.removeEventListener('mousemove', mm);
@@ -373,133 +552,64 @@ function startScaleHandle(el, pos, e) {
   document.addEventListener('mousemove', mm);
   document.addEventListener('mouseup', mu);
 }
-function startWarpCorner(el,key,e){
-  saveH();if(!el.warp)initWarp(el);var sx=e.clientX,sy=e.clientY,ox=el.warp[key].x,oy=el.warp[key].y;
-  function mm(ev){el.warp[key].x=ox+(ev.clientX-sx);el.warp[key].y=oy+(ev.clientY-sy);var d=document.getElementById(el.id);if(d)applyWarp(d,el);renderEl(el);}
-  function mu(){document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);}
-  document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
-}
-
-function startWarpCtrl(el,key,e){
-  saveH();if(!el.warp)initWarp(el);var sx=e.clientX,sy=e.clientY,ox=el.warp[key].x,oy=el.warp[key].y;
-  function mm(ev){el.warp[key].x=ox+(ev.clientX-sx);el.warp[key].y=oy+(ev.clientY-sy);renderEl(el);}
-  function mu(){document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);}
-  document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
-}
-
-function startDrag(el,e){
-  if(selGroup.length>1&&selGroup.indexOf(el.id)>=0){startGroupDrag(e);return;}
+ 
+function startRotate(el, e) {
   saveH();
-  var slx=el.x,sly=el.y,smx=e.clientX,smy=e.clientY;
-  var ox=e.clientX-el.x,oy=e.clientY-el.y;
-  var isKid=!!el.parentId;
-
-  // Snapshot vị trí ban đầu của tất cả descendants
-  var descSnaps=getDescendants(el.id).map(function(c){
-    return{el:c,x:c.x,y:c.y};
-  });
-
-  var ov=document.getElementById('ruler-overlay');
-  if(ov&&distGuideOn&&ov.style.display==='none')ov.style.display='block';
-
-  function mm(ev){
-    // x,y là world coords → drag đơn giản cho cả parent lẫn child
-    if(isKid){
-      el.x=slx+(ev.clientX-smx);
-      el.y=sly+(ev.clientY-smy);
-    } else {
-      el.x=Math.max(0,ev.clientX-ox);
-      el.y=Math.max(0,ev.clientY-oy);
-    }
-
-    snapGuides(el);
-
-    // Tổng delta sau snap
-    var totalDx=el.x-slx;
-    var totalDy=el.y-sly;
-
-    // Kéo tất cả descendants theo
-    descSnaps.forEach(function(s){
-      s.el.x=s.x+totalDx;
-      s.el.y=s.y+totalDy;
-      renderEl(s.el);
-    });
-
-    renderEl(el);updInfo(el);updateRuler(el);
-    var b=getRotatedBounds(el);
-    drawDistanceGuides(b.x,b.y,b.w,b.h);
-  }
-
-  function mu(ev){
-    clearGuides();
-    var ov=document.getElementById('ruler-overlay');
-    if(ov)ov.querySelectorAll('.rul-dist').forEach(function(e){e.remove();});
-    if(ov&&!rulerOn&&!distGuideOn)ov.style.display='none';
-    document.removeEventListener('mousemove',mm);
-    document.removeEventListener('mouseup',mu);
-    if(ev.altKey){tryReparent(el);renderEl(el);}
-    renderHier();
-  }
-  document.addEventListener('mousemove',mm);
-  document.addEventListener('mouseup',mu);
-}
-
-function startRotate(el,e){
-  saveH();
-  var caRect=document.getElementById('ca').getBoundingClientRect();
-  var cx=el.x+el.w/2, cy=el.y+el.h/2;
-  var screenCX=cx+caRect.left;
-  var screenCY=cy+caRect.top;
-  var sa=Math.atan2(e.clientY-screenCY,e.clientX-screenCX)*180/Math.PI;
-  var sr=el.rot||0;
-
-  // Snapshot descendants: vector từ center parent đến center child
-  var descSnaps=getDescendants(el.id).map(function(c){
-    return{
-      el:c,
-      relX:(c.x+c.w/2)-cx,
-      relY:(c.y+c.h/2)-cy,
-      rot:c.rot||0
+  syncWorldRect(el);
+  var caRect = document.getElementById('ca').getBoundingClientRect();
+  var cx = el.x + el.w / 2, cy = el.y + el.h / 2;
+  var screenCX = cx + caRect.left, screenCY = cy + caRect.top;
+  var sa = Math.atan2(e.clientY - screenCY, e.clientX - screenCX) * 180 / Math.PI;
+  var sr = el.rot || 0;
+ 
+  // Snapshot descendants: vector từ center cha đến center con (world)
+  var descSnaps = getDescendants(el.id).map(function(c) {
+    syncWorldRect(c);
+    return {
+      el: c,
+      relX: (c.x + c.w / 2) - cx,
+      relY: (c.y + c.h / 2) - cy,
+      rot: c.rot || 0
     };
   });
-
-  function mm(ev){
-    var a=Math.atan2(ev.clientY-screenCY,ev.clientX-screenCX)*180/Math.PI;
-    var newRot=sr+(a-sa);
-    if(ev.shiftKey)newRot=Math.round(newRot/15)*15;
-    var dRot=newRot-sr;
-    var dRad=dRot*Math.PI/180;
-    el.rot=newRot;
-    renderEl(el);
-    updInfo(el);
-
-    // Xoay children quanh center của parent
-    var cos=Math.cos(dRad),sin=Math.sin(dRad);
-    descSnaps.forEach(function(s){
-      var newRelX=s.relX*cos-s.relY*sin;
-      var newRelY=s.relX*sin+s.relY*cos;
-      s.el.x=cx+newRelX-s.el.w/2;
-      s.el.y=cy+newRelY-s.el.h/2;
-      s.el.rot=s.rot+dRot;
+ 
+  function mm(ev) {
+    var a = Math.atan2(ev.clientY - screenCY, ev.clientX - screenCX) * 180 / Math.PI;
+    var newRot = sr + (a - sa);
+    if (ev.shiftKey) newRot = Math.round(newRot / 15) * 15;
+    var dRot = newRot - (el.rot || 0);
+    var dRad = dRot * Math.PI / 180;
+    el.rot = newRot;
+    renderEl(el); updInfo(el);
+ 
+    // Xoay children quanh center cha
+    var cos = Math.cos(dRad), sin = Math.sin(dRad);
+    descSnaps.forEach(function(s) {
+      var newRelX = s.relX * cos - s.relY * sin;
+      var newRelY = s.relX * sin + s.relY * cos;
+      var nwx = cx + newRelX - s.el.w / 2;
+      var nwy = cy + newRelY - s.el.h / 2;
+      // rot con không đổi (local rot riêng) — đúng chuẩn Roblox
+      setUDim2FromWorld(s.el, nwx, nwy, s.el.w, s.el.h);
+      syncWorldRect(s.el);
       renderEl(s.el);
     });
-
-    if(rulerOn)updateRuler(el);
-    var b=getRotatedBounds(el);
-    drawBoundingBox(b.x,b.y,b.w,b.h);
-    drawResizeGuides(b.x,b.y,b.w,b.h);
-    if(distGuideOn)drawDistanceGuides(b.x,b.y,b.w,b.h);
+ 
+    if (rulerOn) updateRuler(el);
+    var b = getRotatedBounds(el);
+    drawBoundingBox(b.x, b.y, b.w, b.h);
+    drawResizeGuides(b.x, b.y, b.w, b.h);
+    if (distGuideOn) drawDistanceGuides(b.x, b.y, b.w, b.h);
   }
-
-  function mu(){
+ 
+  function mu() {
     clearResizeGuides();
-    document.removeEventListener('mousemove',mm);
-    document.removeEventListener('mouseup',mu);
+    document.removeEventListener('mousemove', mm);
+    document.removeEventListener('mouseup', mu);
   }
-  document.addEventListener('mousemove',mm);
-  document.addEventListener('mouseup',mu);
+  document.addEventListener('mousemove', mm);
+  document.addEventListener('mouseup', mu);
 }
-function updInfo(el){document.getElementById('cinfo').textContent=el.type+' · '+Math.round(el.x)+','+Math.round(el.y)+' · '+Math.round(el.w)+'×'+Math.round(el.h)+(el.rot?' · '+(el.rot||0).toFixed(1)+'°':'');}
 
 // §10 SELECTION
 function selEl(id,shift){
@@ -1034,7 +1144,96 @@ function mr(id,mk,k,lb,mn,mx,v,st){
 function mck(id,mk,k,lb,v){return'<div class="pr"><span class="pl">'+lb+'</span><input type="checkbox" '+(v?'checked':'')+' onchange="ms(\''+id+'\',\''+mk+'\',\''+k+'\',this.checked);var e=getEl(\''+id+'\');if(e){renderEl(e);renderProps();}"/></div>';}
 function mtog(id,mk,k,opts,cur){return'<div class="pr"><span class="pl">'+k+'</span><div style="display:flex;gap:3px;flex:1">'+opts.map(function(a){return'<div class="to '+(cur===a?'on':'')+'" onclick="ms(\''+id+'\',\''+mk+'\',\''+k+'\',\''+a+'\');renderProps()">'+a[0]+'</div>';}).join('')+'</div></div>';}
 
-// §15 RENDER PROPS
+// ─────────────────────────────────────────────────────────────
+// §15  RENDER PROPS — thêm hiển thị UDim2 thực
+// ─────────────────────────────────────────────────────────────
+
+function _transformSection(el) {
+  var id = el.id;
+  var ps = getParentSize(el);
+  syncWorldRect(el);
+
+  var lx, ly;
+  if (!el.parentId) {
+    lx = el.x; ly = el.y;
+  } else {
+    var par = getEl(el.parentId);
+    var parW = calcWorldRect(par);
+    var pr   = (par.rot || 0) * Math.PI / 180;
+    var pcx  = parW.x + parW.w / 2, pcy = parW.y + parW.h / 2;
+    var wcx  = el.x + el.w / 2,     wcy = el.y + el.h / 2;
+    var dx   = wcx - pcx, dy = wcy - pcy;
+    var lcx  =  dx * Math.cos(-pr) - dy * Math.sin(-pr);
+    var lcy  =  dx * Math.sin(-pr) + dy * Math.cos(-pr);
+    lx = lcx - el.w / 2 + parW.w / 2;
+    ly = lcy - el.h / 2 + parW.h / 2;
+  }
+
+  var psXv = el.psX || 0, poXv = Math.round(el.poX || (el.parentId ? lx - psXv*ps.w : el.x));
+  var psYv = el.psY || 0, poYv = Math.round(el.poY || (el.parentId ? ly - psYv*ps.h : el.y));
+  var ssWv = el.ssW || 0, soWv = Math.round(el.soW || el.w);
+  var ssHv = el.ssH || 0, soHv = Math.round(el.soH || el.h);
+
+  var h = '<div style="border-bottom:1px solid var(--bd)"><div class="ps-hdr">📐 Transform (UDim2)</div><div class="ps-body">';
+
+  h += '<div style="font-size:9px;color:var(--ac);padding:2px 0 1px;font-weight:700">Position</div>';
+  h += '<div style="display:flex;gap:4px;margin-bottom:3px">';
+  h += '<div style="flex:1"><div style="font-size:8px;color:var(--tx3)">Scale X</div>' +
+       '<input type="number" class="pi" style="width:100%" step="0.01" min="0" max="1" value="' + psXv.toFixed(3) + '" ' +
+       'oninput="udim2Set(\'' + id + '\',\'psX\',+this.value)"/></div>';
+  h += '<div style="flex:1"><div style="font-size:8px;color:var(--tx3)">Offset X</div>' +
+       '<input type="number" class="pi" style="width:100%" step="1" value="' + poXv + '" ' +
+       'oninput="udim2Set(\'' + id + '\',\'poX\',+this.value)"/></div>';
+  h += '</div><div style="display:flex;gap:4px;margin-bottom:6px">';
+  h += '<div style="flex:1"><div style="font-size:8px;color:var(--tx3)">Scale Y</div>' +
+       '<input type="number" class="pi" style="width:100%" step="0.01" min="0" max="1" value="' + psYv.toFixed(3) + '" ' +
+       'oninput="udim2Set(\'' + id + '\',\'psY\',+this.value)"/></div>';
+  h += '<div style="flex:1"><div style="font-size:8px;color:var(--tx3)">Offset Y</div>' +
+       '<input type="number" class="pi" style="width:100%" step="1" value="' + poYv + '" ' +
+       'oninput="udim2Set(\'' + id + '\',\'poY\',+this.value)"/></div>';
+  h += '</div>';
+
+  h += '<div style="font-size:9px;color:var(--ac);padding:2px 0 1px;font-weight:700">Size</div>';
+  h += '<div style="display:flex;gap:4px;margin-bottom:3px">';
+  h += '<div style="flex:1"><div style="font-size:8px;color:var(--tx3)">Scale W</div>' +
+       '<input type="number" class="pi" style="width:100%" step="0.01" min="0" max="1" value="' + ssWv.toFixed(3) + '" ' +
+       'oninput="udim2Set(\'' + id + '\',\'ssW\',+this.value)"/></div>';
+  h += '<div style="flex:1"><div style="font-size:8px;color:var(--tx3)">Offset W</div>' +
+       '<input type="number" class="pi" style="width:100%" step="1" value="' + soWv + '" ' +
+       'oninput="udim2Set(\'' + id + '\',\'soW\',+this.value)"/></div>';
+  h += '</div><div style="display:flex;gap:4px;margin-bottom:6px">';
+  h += '<div style="flex:1"><div style="font-size:8px;color:var(--tx3)">Scale H</div>' +
+       '<input type="number" class="pi" style="width:100%" step="0.01" min="0" max="1" value="' + ssHv.toFixed(3) + '" ' +
+       'oninput="udim2Set(\'' + id + '\',\'ssH\',+this.value)"/></div>';
+  h += '<div style="flex:1"><div style="font-size:8px;color:var(--tx3)">Offset H</div>' +
+       '<input type="number" class="pi" style="width:100%" step="1" value="' + soHv + '" ' +
+       'oninput="udim2Set(\'' + id + '\',\'soH\',+this.value)"/></div>';
+  h += '</div>';
+
+  h += nr(id, 'Rot',     'rot',  -360, 360, el.rot  || 0);
+  h += nr(id, 'ZIndex',  'zi',   0,    20,  el.zi   || 0);
+  h += nr(id, 'Anchor X','ax',   0,    1,   el.ax   || 0, 0.01);
+  h += nr(id, 'Anchor Y','ay',   0,    1,   el.ay   || 0, 0.01);
+  h += ck(id, 'Visible', 'vis', el.vis !== false);
+
+  h += '<div style="margin-top:4px;padding:4px 6px;background:var(--bg3);border-radius:4px;font-size:8px;color:var(--tx3);font-family:var(--mono)">';
+  h += '🌐 World: x=' + Math.round(el.x) + ' y=' + Math.round(el.y) + ' w=' + Math.round(el.w) + ' h=' + Math.round(el.h);
+  h += '</div>';
+
+  h += '</div></div>';
+  return h;
+}
+
+function udim2Set(id, key, val) {
+  var el = getEl(id);
+  if (!el) return;
+  el[key] = val;
+  syncWorldRect(el);
+  syncDescendants(el.id);
+  renderEl(el);
+  updInfo(el);
+}
+
 function renderProps(){
   var pp=document.getElementById('pp'),el=getEl(sel);
   if(!el){pp.innerHTML='<div class="no-sel">Chọn một element<br>để xem Properties</div>';return;}
@@ -1048,7 +1247,7 @@ function renderProps(){
     h+='</div>';
   }
   h+='<div class="pr" style="font-size:9px;color:var(--tx3)">Kéo thả trong Hierarchy hoặc Alt+Drop trên canvas</div></div></div>';
-  if(el.type!=='ScreenGui')h+=sec('📐 Transform',nr(id,'X','x',0,2000,el.x)+nr(id,'Y','y',0,2000,el.y)+nr(id,'W','w',10,2000,el.w)+nr(id,'H','h',10,2000,el.h)+nr(id,'Rot','rot',-360,360,el.rot||0)+nr(id,'ZIndex','zi',0,20,el.zi||0)+nr(id,'Anchor X','ax',0,1,el.ax||0,0.01)+nr(id,'Anchor Y','ay',0,1,el.ay||0,0.01)+nr(id,'PosScX','psx',0,1,el.psx||0,0.01)+nr(id,'PosScY','psy',0,1,el.psy||0,0.01)+nr(id,'SzScX','ssx',0,1,el.ssx||0,0.01)+nr(id,'SzScY','ssy',0,1,el.ssy||0,0.01)+ck(id,'Visible','vis',el.vis!==false));
+  if(el.type!=='ScreenGui') h += _transformSection(el);
   h+=sec('🎨 Appearance',cr(id,'BG','bc',el.bc)+nr(id,'Opacity','op',0,1,el.op||1,0.01)+nr(id,'Corner','cr',0,200,el.cr||0)+nr(id,'Border','bdw',0,20,el.bdw||0)+cr(id,'Bdr Col','bdc',el.bdc));
   if(el.type==='TextLabel'||el.type==='TextButton'){
     var fo=FONTS.map(function(f){return'<option '+(el.fn===f?'selected':'')+' value="'+f+'">'+f+'</option>';}).join('');
@@ -1109,61 +1308,194 @@ function _sorted(){
   els.filter(function(e){return!e.parentId;}).forEach(add);
   return s;
 }
-function buildLua(){
-  var out='-- Generated by Roblox UI Builder '+VERSION+'\nlocal PlayerGui=game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")\n\n';
-  _sorted().forEach(function(el,i){
-    var vn=(el.name||el.type+i).replace(/\W/g,'_'),par;
-    if(el.parentId)par=(getEl(el.parentId).name||'Frame').replace(/\W/g,'_');
-    else par='PlayerGui';
-    out+='local '+vn+'=Instance.new("'+el.type+'")\n'+vn+'.Name="'+el.name+'"\n'+vn+'.Parent='+par+'\n';
-    if(el.type!=='ScreenGui'){
-      out+=vn+'.Position=UDim2.new('+(el.psx||0)+','+Math.round(el.x)+','+(el.psy||0)+','+Math.round(el.y)+')\n';
-      out+=vn+'.Size=UDim2.new('+(el.ssx||0)+','+Math.round(el.w)+','+(el.ssy||0)+','+Math.round(el.h)+')\n';
-      out+=vn+'.AnchorPoint=Vector2.new('+(el.ax||0)+','+(el.ay||0)+')\n';
-      out+=vn+'.ZIndex='+(el.zi||0)+'\n';
-      if(el.bc)out+=vn+'.BackgroundColor3=Color3.fromRGB('+Math.round(el.bc.r)+','+Math.round(el.bc.g)+','+Math.round(el.bc.b)+')\n';
-      out+=vn+'.BackgroundTransparency='+parseFloat((1-(el.op||1)).toFixed(2))+'\n';
-      if(el.vis===false)out+=vn+'.Visible=false\n';
-      if(el.rot)out+=vn+'.Rotation='+parseFloat((el.rot||0).toFixed(2))+'\n';
+function buildLua() {
+  var out = '-- Generated by Roblox UI Builder ' + VERSION + '\n';
+  out += 'local PlayerGui = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")\n\n';
+
+  _sorted().forEach(function(el, i) {
+    syncWorldRect(el);
+
+    var vn  = (el.name || el.type + i).replace(/\W/g, '_');
+    var par;
+    if (el.parentId) par = (getEl(el.parentId).name || 'Frame').replace(/\W/g, '_');
+    else             par = 'PlayerGui';
+
+    out += 'local ' + vn + ' = Instance.new("' + el.type + '")\n';
+    out += vn + '.Name = "' + el.name + '"\n';
+    out += vn + '.Parent = ' + par + '\n';
+
+    if (el.type !== 'ScreenGui') {
+      // ── Position UDim2 ──────────────────────────────────────
+      var psX = el.psX || 0, poX = el.poX;
+      var psY = el.psY || 0, poY = el.poY;
+
+      if (poX === undefined || poX === null) {
+        psX = 0;
+        poX = el.parentId
+          ? (function() {
+              var par2 = getEl(el.parentId);
+              var parW = calcWorldRect(par2);
+              var pr   = (par2.rot || 0) * Math.PI / 180;
+              var pcx  = parW.x + parW.w / 2, pcy = parW.y + parW.h / 2;
+              var wcx  = el.x + el.w / 2,     wcy = el.y + el.h / 2;
+              var dx   = wcx - pcx, dy = wcy - pcy;
+              return dx * Math.cos(-pr) - dy * Math.sin(-pr) - el.w / 2 + parW.w / 2;
+            })()
+          : el.x;
+      }
+      if (poY === undefined || poY === null) {
+        psY = 0;
+        poY = el.parentId
+          ? (function() {
+              var par2 = getEl(el.parentId);
+              var parW = calcWorldRect(par2);
+              var pr   = (par2.rot || 0) * Math.PI / 180;
+              var pcx  = parW.x + parW.w / 2, pcy = parW.y + parW.h / 2;
+              var wcx  = el.x + el.w / 2,     wcy = el.y + el.h / 2;
+              var dx   = wcx - pcx, dy = wcy - pcy;
+              return dx * Math.sin(-pr) + dy * Math.cos(-pr) - el.h / 2 + parW.h / 2;
+            })()
+          : el.y;
+      }
+
+      // ── Size UDim2 ──────────────────────────────────────────
+      var ssW = el.ssW || 0, soW = (el.soW !== undefined && el.soW !== null) ? el.soW : el.w;
+      var ssH = el.ssH || 0, soH = (el.soH !== undefined && el.soH !== null) ? el.soH : el.h;
+
+      out += vn + '.Position = UDim2.new(' +
+             psX.toFixed(4) + ', ' + Math.round(poX) + ', ' +
+             psY.toFixed(4) + ', ' + Math.round(poY) + ')\n';
+      out += vn + '.Size = UDim2.new(' +
+             ssW.toFixed(4) + ', ' + Math.round(soW) + ', ' +
+             ssH.toFixed(4) + ', ' + Math.round(soH) + ')\n';
+
+      out += vn + '.AnchorPoint = Vector2.new(' + (el.ax || 0) + ', ' + (el.ay || 0) + ')\n';
+      out += vn + '.ZIndex = ' + (el.zi || 0) + '\n';
+      if (el.bc) out += vn + '.BackgroundColor3 = Color3.fromRGB(' +
+                 Math.round(el.bc.r) + ', ' + Math.round(el.bc.g) + ', ' + Math.round(el.bc.b) + ')\n';
+      out += vn + '.BackgroundTransparency = ' + parseFloat((1 - (el.op || 1)).toFixed(2)) + '\n';
+      if (el.vis === false) out += vn + '.Visible = false\n';
+      if (el.rot) out += vn + '.Rotation = ' + parseFloat((el.rot || 0).toFixed(2)) + '\n';
     }
-    if(el.warp)out+='-- Warp trên '+vn+' không export được\n';
-    if(el.type==='TextLabel'||el.type==='TextButton'){
-      out+=vn+'.Text="'+String(el.txt||'').replace(/"/g,'\\"')+'"\n';
-      if(el.tc)out+=vn+'.TextColor3=Color3.fromRGB('+Math.round(el.tc.r)+','+Math.round(el.tc.g)+','+Math.round(el.tc.b)+')\n';
-      out+=vn+'.TextSize='+(el.tsz||14)+'\n'+vn+'.Font=Enum.Font.'+(el.fn||'GothamMedium')+'\n';
-      out+=vn+'.TextXAlignment=Enum.TextXAlignment.'+(el.txa||'Left')+'\n'+vn+'.TextYAlignment=Enum.TextYAlignment.'+(el.tya||'Center')+'\n';
-      if(el.tw)out+=vn+'.TextWrapped=true\n';if(el.tsc)out+=vn+'.TextScaled=true\n';if(el.rt)out+=vn+'.RichText=true\n';
+
+    if (el.warp) out += '-- Warp trên ' + vn + ' không export được\n';
+
+    if (el.type === 'TextLabel' || el.type === 'TextButton') {
+      out += vn + '.Text = "' + String(el.txt || '').replace(/"/g, '\\"') + '"\n';
+      if (el.tc) out += vn + '.TextColor3 = Color3.fromRGB(' +
+                 Math.round(el.tc.r) + ', ' + Math.round(el.tc.g) + ', ' + Math.round(el.tc.b) + ')\n';
+      out += vn + '.TextSize = ' + (el.tsz || 14) + '\n';
+      out += vn + '.Font = Enum.Font.' + (el.fn || 'GothamMedium') + '\n';
+      out += vn + '.TextXAlignment = Enum.TextXAlignment.' + (el.txa || 'Left') + '\n';
+      out += vn + '.TextYAlignment = Enum.TextYAlignment.' + (el.tya || 'Center') + '\n';
+      if (el.tw)  out += vn + '.TextWrapped = true\n';
+      if (el.tsc) out += vn + '.TextScaled = true\n';
+      if (el.rt)  out += vn + '.RichText = true\n';
     }
-    if(el.type==='ImageLabel'||el.type==='ImageButton'){
-      if(el.img)out+=vn+'.Image="'+el.img+'"\n';
-      if(el.ic)out+=vn+'.ImageColor3=Color3.fromRGB('+Math.round(el.ic.r)+','+Math.round(el.ic.g)+','+Math.round(el.ic.b)+')\n';
-      out+=vn+'.ImageTransparency='+(el.it||0)+'\n'+vn+'.ScaleType=Enum.ScaleType.'+(el.st||'Stretch')+'\n';
+
+    if (el.type === 'ImageLabel' || el.type === 'ImageButton') {
+      if (el.img) out += vn + '.Image = "' + el.img + '"\n';
+      if (el.ic)  out += vn + '.ImageColor3 = Color3.fromRGB(' +
+                  Math.round(el.ic.r) + ', ' + Math.round(el.ic.g) + ', ' + Math.round(el.ic.b) + ')\n';
+      out += vn + '.ImageTransparency = ' + (el.it || 0) + '\n';
+      out += vn + '.ScaleType = Enum.ScaleType.' + (el.st || 'Stretch') + '\n';
     }
-    if(el.type==='ScrollingFrame'){out+=vn+'.ScrollBarThickness='+(el.sbt||6)+'\n';if(el.sbc)out+=vn+'.ScrollBarImageColor3=Color3.fromRGB('+Math.round(el.sbc.r)+','+Math.round(el.sbc.g)+','+Math.round(el.sbc.b)+')\n';out+=vn+'.CanvasSize=UDim2.new(0,0,0,'+(el.csy||200)+')\n';if(el.se===false)out+=vn+'.ScrollingEnabled=false\n';}
-    if(el.type==='VideoFrame'){out+=vn+'.Video="'+(el.vid||'rbxassetid://0')+'"\n'+vn+'.Volume='+(el.vol||0.5)+'\n';if(el.vloop)out+=vn+'.Looped=true\n';if(el.vplay)out+=vn+':Play()\n';}
-    if(el.type==='ScreenGui'){if(el.en===false)out+=vn+'.Enabled=false\n';out+=vn+'.DisplayOrder='+(el.dord||0)+'\n';if(el.ros===false)out+=vn+'.ResetOnSpawn=false\n';if(el.igi)out+=vn+'.IgnoreGuiInset=true\n';}
-    if(el.type==='CanvasGroup')out+=vn+'.GroupTransparency='+(el.gt||0)+'\n';
-    if(el.type==='TextButton'||el.type==='ImageButton'){if(el.abc===false)out+=vn+'.AutoButtonColor=false\n';if(el.modal)out+=vn+'.Modal=true\n';}
-    Object.keys(el.mods||{}).forEach(function(mk){
-      var md=el.mods[mk],mv=mk+'_'+vn;
-      out+='\nlocal '+mv+'=Instance.new("'+mk+'")\n'+mv+'.Parent='+vn+'\n';
-      if(mk==='UICorner')out+=mv+'.CornerRadius=UDim.new(0,'+(md.cr||0)+')\n';
-      if(mk==='UIGradient'){var c0=h2r(md.c0||'#7c6af7'),c1=h2r(md.c1||'#22d3ee');out+=mv+'.Color=ColorSequence.new({ColorSequenceKeypoint.new(0,Color3.fromRGB('+c0.r+','+c0.g+','+c0.b+')),ColorSequenceKeypoint.new(1,Color3.fromRGB('+c1.r+','+c1.g+','+c1.b+'))})\n'+mv+'.Rotation='+(md.rot||0)+'\n';}
-      if(mk==='UIStroke'){var sc=h2r(md.col||'#7c6af7');out+=mv+'.Color=Color3.fromRGB('+sc.r+','+sc.g+','+sc.b+')\n'+mv+'.Thickness='+(md.th||2)+'\n'+mv+'.Transparency='+(md.tr||0)+'\n';}
-      if(mk==='UIPadding')out+=mv+'.PaddingTop=UDim.new(0,'+(md.t||0)+')\n'+mv+'.PaddingBottom=UDim.new(0,'+(md.b||0)+')\n'+mv+'.PaddingLeft=UDim.new(0,'+(md.l||0)+')\n'+mv+'.PaddingRight=UDim.new(0,'+(md.r||0)+')\n';
-      if(mk==='UIScale')out+=mv+'.Scale='+(md.sc||1)+'\n';
-      if(mk==='UIAspectRatioConstraint')out+=mv+'.AspectRatio='+(md.ar||1)+'\n'+mv+'.AspectType=Enum.AspectType.'+(md.at||'FitWithinMaxSize')+'\n'+mv+'.DominantAxis=Enum.DominantAxis.'+(md.da||'Width')+'\n';
-      if(mk==='UISizeConstraint')out+=mv+'.MinSize=Vector2.new('+(md.mnx||0)+','+(md.mny||0)+')\n'+mv+'.MaxSize=Vector2.new('+(md.mxx||999)+','+(md.mxy||999)+')\n';
-      if(mk==='UITextSizeConstraint')out+=mv+'.MinTextSize='+(md.mn||6)+'\n'+mv+'.MaxTextSize='+(md.mx||100)+'\n';
-      if(mk==='UIListLayout')out+=mv+'.FillDirection=Enum.FillDirection.'+(md.fd||'Vertical')+'\n'+mv+'.HorizontalAlignment=Enum.HorizontalAlignment.'+(md.ha||'Left')+'\n'+mv+'.VerticalAlignment=Enum.VerticalAlignment.'+(md.va||'Top')+'\n'+mv+'.SortOrder=Enum.SortOrder.'+(md.so||'LayoutOrder')+'\n'+mv+'.Padding=UDim.new(0,'+(md.pd||0)+')\n';
-      if(mk==='UIGridLayout')out+=mv+'.CellSize=UDim2.new(0,'+(md.cs||100)+',0,'+(md.cs||100)+')\n'+mv+'.CellPadding=UDim2.new(0,'+(md.cpx||4)+',0,'+(md.cpy||4)+')\n'+mv+'.FillDirection=Enum.FillDirection.'+(md.fd||'Horizontal')+'\n'+mv+'.SortOrder=Enum.SortOrder.'+(md.so||'LayoutOrder')+'\n';
-      if(mk==='UITableLayout')out+=mv+'.FillEmptySpaceColumns='+(md.fec?'true':'false')+'\n'+mv+'.FillEmptySpaceRows='+(md.fer?'true':'false')+'\n';
-      if(mk==='UIPageLayout')out+=mv+'.Animated='+(md.an!==false?'true':'false')+'\n'+mv+'.AnimationDirection=Enum.AnimationDirection.'+(md.ad||'Horizontal')+'\n'+mv+'.Circular='+(md.ci?'true':'false')+'\n';
-      if(mk==='UIFlexItem')out+=mv+'.FlexMode=Enum.UIFlexMode.'+(md.fm||'Fill')+'\n'+mv+'.GrowRatio='+(md.gr||1)+'\n'+mv+'.ShrinkRatio='+(md.sr||1)+'\n';
+
+    if (el.type === 'ScrollingFrame') {
+      out += vn + '.ScrollBarThickness = ' + (el.sbt || 6) + '\n';
+      if (el.sbc) out += vn + '.ScrollBarImageColor3 = Color3.fromRGB(' +
+                  Math.round(el.sbc.r) + ', ' + Math.round(el.sbc.g) + ', ' + Math.round(el.sbc.b) + ')\n';
+      out += vn + '.CanvasSize = UDim2.new(0, 0, 0, ' + (el.csy || 200) + ')\n';
+      if (el.se === false) out += vn + '.ScrollingEnabled = false\n';
+    }
+
+    if (el.type === 'VideoFrame') {
+      out += vn + '.Video = "' + (el.vid || 'rbxassetid://0') + '"\n';
+      out += vn + '.Volume = ' + (el.vol || 0.5) + '\n';
+      if (el.vloop) out += vn + '.Looped = true\n';
+      if (el.vplay) out += vn + ':Play()\n';
+    }
+
+    if (el.type === 'ScreenGui') {
+      if (el.en === false) out += vn + '.Enabled = false\n';
+      out += vn + '.DisplayOrder = ' + (el.dord || 0) + '\n';
+      if (el.ros === false) out += vn + '.ResetOnSpawn = false\n';
+      if (el.igi) out += vn + '.IgnoreGuiInset = true\n';
+    }
+
+    if (el.type === 'CanvasGroup') out += vn + '.GroupTransparency = ' + (el.gt || 0) + '\n';
+
+    if (el.type === 'TextButton' || el.type === 'ImageButton') {
+      if (el.abc === false) out += vn + '.AutoButtonColor = false\n';
+      if (el.modal) out += vn + '.Modal = true\n';
+    }
+
+    Object.keys(el.mods || {}).forEach(function(mk) {
+      var md = el.mods[mk], mv = mk + '_' + vn;
+      out += '\nlocal ' + mv + ' = Instance.new("' + mk + '")\n';
+      out += mv + '.Parent = ' + vn + '\n';
+      if (mk === 'UICorner')
+        out += mv + '.CornerRadius = UDim.new(0, ' + (md.cr || 0) + ')\n';
+      if (mk === 'UIGradient') {
+        var c0 = h2r(md.c0 || '#7c6af7'), c1 = h2r(md.c1 || '#22d3ee');
+        out += mv + '.Color = ColorSequence.new({ColorSequenceKeypoint.new(0, Color3.fromRGB(' +
+               c0.r + ',' + c0.g + ',' + c0.b + ')), ColorSequenceKeypoint.new(1, Color3.fromRGB(' +
+               c1.r + ',' + c1.g + ',' + c1.b + '))})\n';
+        out += mv + '.Rotation = ' + (md.rot || 0) + '\n';
+      }
+      if (mk === 'UIStroke') {
+        var sc = h2r(md.col || '#7c6af7');
+        out += mv + '.Color = Color3.fromRGB(' + sc.r + ',' + sc.g + ',' + sc.b + ')\n';
+        out += mv + '.Thickness = ' + (md.th || 2) + '\n';
+        out += mv + '.Transparency = ' + (md.tr || 0) + '\n';
+      }
+      if (mk === 'UIPadding')
+        out += mv + '.PaddingTop = UDim.new(0,' + (md.t||0) + ')\n' +
+               mv + '.PaddingBottom = UDim.new(0,' + (md.b||0) + ')\n' +
+               mv + '.PaddingLeft = UDim.new(0,' + (md.l||0) + ')\n' +
+               mv + '.PaddingRight = UDim.new(0,' + (md.r||0) + ')\n';
+      if (mk === 'UIScale')
+        out += mv + '.Scale = ' + (md.sc || 1) + '\n';
+      if (mk === 'UIAspectRatioConstraint')
+        out += mv + '.AspectRatio = ' + (md.ar || 1) + '\n' +
+               mv + '.AspectType = Enum.AspectType.' + (md.at || 'FitWithinMaxSize') + '\n' +
+               mv + '.DominantAxis = Enum.DominantAxis.' + (md.da || 'Width') + '\n';
+      if (mk === 'UISizeConstraint')
+        out += mv + '.MinSize = Vector2.new(' + (md.mnx||0) + ',' + (md.mny||0) + ')\n' +
+               mv + '.MaxSize = Vector2.new(' + (md.mxx||999) + ',' + (md.mxy||999) + ')\n';
+      if (mk === 'UITextSizeConstraint')
+        out += mv + '.MinTextSize = ' + (md.mn || 6) + '\n' +
+               mv + '.MaxTextSize = ' + (md.mx || 100) + '\n';
+      if (mk === 'UIListLayout')
+        out += mv + '.FillDirection = Enum.FillDirection.' + (md.fd || 'Vertical') + '\n' +
+               mv + '.HorizontalAlignment = Enum.HorizontalAlignment.' + (md.ha || 'Left') + '\n' +
+               mv + '.VerticalAlignment = Enum.VerticalAlignment.' + (md.va || 'Top') + '\n' +
+               mv + '.SortOrder = Enum.SortOrder.' + (md.so || 'LayoutOrder') + '\n' +
+               mv + '.Padding = UDim.new(0,' + (md.pd || 0) + ')\n';
+      if (mk === 'UIGridLayout')
+        out += mv + '.CellSize = UDim2.new(0,' + (md.cs||100) + ',0,' + (md.cs||100) + ')\n' +
+               mv + '.CellPadding = UDim2.new(0,' + (md.cpx||4) + ',0,' + (md.cpy||4) + ')\n' +
+               mv + '.FillDirection = Enum.FillDirection.' + (md.fd || 'Horizontal') + '\n' +
+               mv + '.SortOrder = Enum.SortOrder.' + (md.so || 'LayoutOrder') + '\n';
+      if (mk === 'UITableLayout')
+        out += mv + '.FillEmptySpaceColumns = ' + (md.fec ? 'true' : 'false') + '\n' +
+               mv + '.FillEmptySpaceRows = ' + (md.fer ? 'true' : 'false') + '\n';
+      if (mk === 'UIPageLayout')
+        out += mv + '.Animated = ' + (md.an !== false ? 'true' : 'false') + '\n' +
+               mv + '.AnimationDirection = Enum.AnimationDirection.' + (md.ad || 'Horizontal') + '\n' +
+               mv + '.Circular = ' + (md.ci ? 'true' : 'false') + '\n';
+      if (mk === 'UIFlexItem')
+        out += mv + '.FlexMode = Enum.UIFlexMode.' + (md.fm || 'Fill') + '\n' +
+               mv + '.GrowRatio = ' + (md.gr || 1) + '\n' +
+               mv + '.ShrinkRatio = ' + (md.sr || 1) + '\n';
     });
-    if(el.type==='TextButton'||el.type==='ImageButton')out+='\n'+vn+'.MouseButton1Click:Connect(function()\n\t-- TODO\nend)\n';
-    out+='\n';
+
+    if (el.type === 'TextButton' || el.type === 'ImageButton')
+      out += '\n' + vn + '.MouseButton1Click:Connect(function()\n\t-- TODO\nend)\n';
+
+    out += '\n';
   });
+
   return out;
 }
 function buildHTML(){
@@ -1277,6 +1609,7 @@ var _arrowSaveTimer = null;
   document.head.appendChild(s);
   document.querySelectorAll('.version-tag').forEach(function(el){ el.textContent = VERSION; });
   renderProps();hint();
+  migrateToUDim2();
 })();
 
 // §19 ALIGNMENT
@@ -1515,6 +1848,23 @@ function clearResizeGuides(){
 }
 
 // §21 SMART GUIDES
+
+// MIGRATION: gọi 1 lần khi load project cũ
+function migrateToUDim2() {
+  function migrate(el) {
+    var needsMigration = (el.poX === undefined || el.poX === null);
+    if (needsMigration) {
+      setUDim2FromWorld(el, el.x, el.y, el.w, el.h);
+    } else {
+      syncWorldRect(el);
+    }
+    getChildren(el.id).forEach(migrate);
+  }
+  els.filter(function(e) { return !e.parentId; }).forEach(migrate);
+  els.forEach(renderEl);
+  toast('✅ Migrated to UDim2');
+}
+
 var _guideLines = [];
 var SNAP_THRESHOLD = 8;
 function clearGuides() {
