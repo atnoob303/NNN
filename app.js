@@ -199,7 +199,9 @@ function renderEl(el){
   if(el.type==='ViewportFrame'){var ph=document.createElement('div');ph.style.cssText='position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:22px;opacity:.4;pointer-events:none;flex-direction:column;gap:3px';ph.innerHTML='📦<div style="font-size:9px;color:#60a5fa;font-family:monospace">3D</div>';d.appendChild(ph);}
   if(el.type==='ScrollingFrame'){var sb=document.createElement('div');sb.style.cssText='position:absolute;right:0;top:0;bottom:0;width:'+(el.sbt||6)+'px;background:'+rgb(el.sbc)+';opacity:.4;border-radius:3px';d.appendChild(sb);}
   if(el.type==='ScreenGui'){d.style.border='1px dashed rgba(34,211,238,.3)';var lb=document.createElement('div');lb.style.cssText='position:absolute;top:3px;left:4px;font-size:8px;color:#22d3ee;font-family:monospace;opacity:.6;font-weight:700;pointer-events:none';lb.textContent='⊡ ScreenGui';d.appendChild(lb);}
-  if(inGroup)addTransformHandles(d,el);
+  // Chỉ hiện transform handles nếu là element được chọn ĐƠN LẺ
+// Khi trong group (selGroup.length > 1) thì không cho resize riêng
+if(inGroup && selGroup.length===1) addTransformHandles(d,el);
   d.onmousedown=function(e){
     if(e.target.classList.contains('rh')||e.target.classList.contains('wh')||e.target.classList.contains('roth'))return;
     e.stopPropagation();
@@ -388,15 +390,33 @@ function startGroupDrag(e){
   var smx=e.clientX,smy=e.clientY;
   function mm(ev){
     var dx=ev.clientX-smx,dy=ev.clientY-smy;
+    // Tính bounds tạm để snap
+    var tempSnaps=snaps.map(function(s){return{x:s.x+dx,y:s.y+dy,w:s.el.w,h:s.el.h};});
+    var mnx=Math.min.apply(null,tempSnaps.map(function(s){return s.x;}));
+    var mny=Math.min.apply(null,tempSnaps.map(function(s){return s.y;}));
+    var mxx=Math.max.apply(null,tempSnaps.map(function(s){return s.x+s.w;}));
+    var mxy=Math.max.apply(null,tempSnaps.map(function(s){return s.y+s.h;}));
+    var snapOff=snapGuidesGroup({x:mnx,y:mny,w:mxx-mnx,h:mxy-mny});
+    dx+=snapOff.dx;dy+=snapOff.dy;
+
     snaps.forEach(function(s){
       s.el.x=s.x+dx;s.el.y=s.y+dy;
       renderEl(s.el);getDescendants(s.el.id).forEach(renderEl);
     });
     renderGroupBox();
+
     var b=calcGroupBounds();
-    if(b)document.getElementById('cinfo').textContent='Group · '+Math.round(b.x)+','+Math.round(b.y)+' · '+Math.round(b.w)+'×'+Math.round(b.h);
+    if(b){
+      document.getElementById('cinfo').textContent='Group · '+Math.round(b.x)+','+Math.round(b.y)+' · '+Math.round(b.w)+'×'+Math.round(b.h);
+      updateRulerGroup(b,grp);
+    }
   }
-  function mu(){document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);renderHier();}
+  function mu(){
+    clearGuides();
+    document.removeEventListener('mousemove',mm);
+    document.removeEventListener('mouseup',mu);
+    renderHier();
+  }
   document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
 }
  
@@ -562,13 +582,49 @@ function removeMod(mk){var el=getEl(sel);if(!el)return;saveH();delete el.mods[mk
 function layerUp(){var el=getEl(sel);if(!el)return;saveH();el.zi=(el.zi||0)+1;renderEl(el);}
 function layerDn(){var el=getEl(sel);if(!el)return;saveH();el.zi=Math.max(0,(el.zi||0)-1);renderEl(el);}
 function dupSel(){
+  if(selGroup.length>1){
+    // Copy cả group, giữ nguyên quan hệ parent-child BÊN TRONG group
+    saveH();
+    var idMap={}; // oldId → newId
+    var newEls=[];
+    // Bước 1: clone từng element, tạo id mới
+    selGroup.forEach(function(id){
+      var o=getEl(id);if(!o)return;
+      var c=JSON.parse(JSON.stringify(o));
+      c.id='el_'+(++idc);
+      c.name=o.type+idc;
+      idMap[o.id]=c.id;
+      newEls.push(c);
+    });
+    // Bước 2: cập nhật parentId bên trong group
+    newEls.forEach(function(c){
+      if(c.parentId&&idMap[c.parentId]){
+        // parent nằm trong group → giữ quan hệ, trỏ sang clone mới
+        c.parentId=idMap[c.parentId];
+      } else if(c.parentId&&!idMap[c.parentId]){
+        // parent nằm ngoài group → giữ nguyên parent gốc
+      }
+      // Offset vị trí 20px
+      c.x+=20;c.y+=20;
+    });
+    // Bước 3: thêm vào els và render
+    newEls.forEach(function(c){els.push(c);renderEl(c);});
+    // Chọn group mới
+    selGroup=newEls.map(function(c){return c.id;});
+    sel=selGroup[selGroup.length-1];
+    els.forEach(function(e){renderEl(e);});
+    renderGroupBox();renderHier();
+    toast('⧉ Duplicated '+newEls.length+' elements');
+    return;
+  }
+  // Single element
   var o=getEl(sel);if(!o)return;
-  saveH();var c=JSON.parse(JSON.stringify(o));c.id='el_'+(++idc);c.name=o.type+idc;c.x+=20;c.y+=20;
+  saveH();var c=JSON.parse(JSON.stringify(o));
+  c.id='el_'+(++idc);c.name=o.type+idc;c.x+=20;c.y+=20;
   els.push(c);renderEl(c);selEl(c.id);renderHier();
 }
 function delSel(){
   if(!sel)return;saveH();
-  // Xóa tất cả trong selGroup
   selGroup.forEach(function(id){
     getChildren(id).forEach(function(c){c.parentId=null;});
     var d=document.getElementById(id);if(d)d.remove();
@@ -586,7 +642,8 @@ function clearAll(){
 function undo(){
   if(!hist.length)return;
   els.forEach(function(e){var d=document.getElementById(e.id);if(d)d.remove();});
-  els=hist.pop();sel=null;els.forEach(renderEl);renderProps();renderHier();hint();
+  els=hist.pop();sel=null;selGroup=[];clearGroupBox();
+  els.forEach(renderEl);renderProps();renderHier();hint();
 }
 
 // §13 HIERARCHY (drag-drop như Roblox Studio)
@@ -1162,19 +1219,54 @@ function toggleRuler(){
   if(!rulerOn&&ov)ov.innerHTML='';
   toast(rulerOn?'📏 Ruler ON':'📏 Ruler OFF');
 }
+
+// Ruler cho element đơn lẻ (tia xanh)
 function updateRuler(el){
   if(!rulerOn||!el)return;
   var ov=document.getElementById('ruler-overlay');
   if(!ov)return;
   var x=Math.round(el.x),y=Math.round(el.y),w=Math.round(el.w),h=Math.round(el.h);
+  // Giữ lại ruler group nếu có, chỉ update single
+  var existing=ov.querySelector('.rul-group-layer');
   ov.innerHTML=
-    '<div class="rul-line rul-h" style="top:'+y+'px"></div>'+
-    '<div class="rul-line rul-h" style="top:'+(y+h)+'px"></div>'+
-    '<div class="rul-line rul-v" style="left:'+x+'px"></div>'+
-    '<div class="rul-line rul-v" style="left:'+(x+w)+'px"></div>'+
-    '<div class="rul-lbl" style="left:'+(x+w/2)+'px;top:'+(y-18)+'px">W: '+w+'px</div>'+
-    '<div class="rul-lbl" style="left:'+(x+w+8)+'px;top:'+(y+h/2)+'px">H: '+h+'px</div>'+
-    '<div class="rul-lbl" style="left:'+(x+2)+'px;top:'+(y+2)+'px">'+x+', '+y+'</div>';
+    '<div class="rul-line rul-h" style="top:'+y+'px;border-color:#22d3ee"></div>'+
+    '<div class="rul-line rul-h" style="top:'+(y+h)+'px;border-color:#22d3ee"></div>'+
+    '<div class="rul-line rul-v" style="left:'+x+'px;border-color:#22d3ee"></div>'+
+    '<div class="rul-line rul-v" style="left:'+(x+w)+'px;border-color:#22d3ee"></div>'+
+    '<div class="rul-lbl" style="left:'+(x+w/2)+'px;top:'+(y-18)+'px;color:#22d3ee">W: '+w+'px</div>'+
+    '<div class="rul-lbl" style="left:'+(x+w+8)+'px;top:'+(y+h/2)+'px;color:#22d3ee">H: '+h+'px</div>'+
+    '<div class="rul-lbl" style="left:'+(x+2)+'px;top:'+(y+2)+'px;color:#22d3ee">'+x+', '+y+'</div>';
+}
+
+// Ruler cho group: tia xanh = bounding box ngoài, tia vàng = từng element bên trong
+function updateRulerGroup(bounds, grp){
+  if(!rulerOn)return;
+  var ov=document.getElementById('ruler-overlay');
+  if(!ov)return;
+  var html='';
+  var bx=Math.round(bounds.x),by=Math.round(bounds.y),bw=Math.round(bounds.w),bh=Math.round(bounds.h);
+
+  // Tia XANH — bounding box của cả group
+  html+=
+    '<div class="rul-line rul-h" style="top:'+by+'px;border-color:#22d3ee;opacity:.9"></div>'+
+    '<div class="rul-line rul-h" style="top:'+(by+bh)+'px;border-color:#22d3ee;opacity:.9"></div>'+
+    '<div class="rul-line rul-v" style="left:'+bx+'px;border-color:#22d3ee;opacity:.9"></div>'+
+    '<div class="rul-line rul-v" style="left:'+(bx+bw)+'px;border-color:#22d3ee;opacity:.9"></div>'+
+    '<div class="rul-lbl" style="left:'+(bx+bw/2)+'px;top:'+(by-18)+'px;color:#22d3ee">W: '+bw+'px</div>'+
+    '<div class="rul-lbl" style="left:'+(bx+bw+8)+'px;top:'+(by+bh/2)+'px;color:#22d3ee">H: '+bh+'px</div>';
+
+  // Tia VÀNG — từng element trong group
+  grp.forEach(function(el){
+    var x=Math.round(el.x),y=Math.round(el.y),w=Math.round(el.w),h=Math.round(el.h);
+    html+=
+      '<div class="rul-line rul-h" style="top:'+y+'px;border-color:#fbbf24;opacity:.5"></div>'+
+      '<div class="rul-line rul-h" style="top:'+(y+h)+'px;border-color:#fbbf24;opacity:.5"></div>'+
+      '<div class="rul-line rul-v" style="left:'+x+'px;border-color:#fbbf24;opacity:.5"></div>'+
+      '<div class="rul-line rul-v" style="left:'+(x+w)+'px;border-color:#fbbf24;opacity:.5"></div>'+
+      '<div class="rul-lbl" style="left:'+(x+2)+'px;top:'+(y+2)+'px;color:#fbbf24;font-size:8px">'+el.name+'</div>';
+  });
+
+  ov.innerHTML=html;
 }
 
 // §21 SMART GUIDES
@@ -1186,14 +1278,28 @@ function clearGuides(){
   _guideLines=[];
 }
 
+function _drawGuide(isVertical, val, color){
+  var cv=document.getElementById('cv');
+  var g=document.createElement('div');
+  color=color||'#22d3ee';
+  if(isVertical){
+    g.style.cssText='position:absolute;top:0;bottom:0;width:1px;background:'+color+';opacity:.85;pointer-events:none;z-index:800;left:'+val+'px;';
+  } else {
+    g.style.cssText='position:absolute;left:0;right:0;height:1px;background:'+color+';opacity:.85;pointer-events:none;z-index:800;top:'+val+'px;';
+  }
+  cv.appendChild(g);_guideLines.push(g);
+}
+
 function snapGuides(el){
   clearGuides();
+  // Nếu đang kéo group thì không snap từng element
+  if(selGroup.length>1) return;
+
   var others=els.filter(function(e){return e.id!==el.id;});
   if(!others.length)return;
 
   var ex=el.x,ey=el.y,ew=el.w,eh=el.h;
   var ecx=ex+ew/2,ecy=ey+eh/2,ex2=ex+ew,ey2=ey+eh;
-
   var snapX=null,snapY=null;
   var THRESH=SNAP_THRESHOLD;
 
@@ -1201,44 +1307,38 @@ function snapGuides(el){
     var ap=getAbsPos(o);
     var ox=ap.x,oy=ap.y,ow=o.w,oh=o.h;
     var ocx=ox+ow/2,ocy=oy+oh/2,ox2=ox+ow,oy2=oy+oh;
-
-    // Snap X: left-left, left-right, center-center, right-left, right-right
-    var xPairs=[
-      [ex,ox],[ex,ox2],[ex,ocx],
-      [ecx,ox],[ecx,ox2],[ecx,ocx],
-      [ex2,ox],[ex2,ox2],[ex2,ocx]
-    ];
-    xPairs.forEach(function(p){
-      if(snapX===null&&Math.abs(p[0]-p[1])<THRESH){
-        el.x+=p[1]-p[0];
-        snapX=p[1];
-      }
-    });
-
-    // Snap Y: top-top, top-bottom, center-center, bottom-top, bottom-bottom
-    var yPairs=[
-      [ey,oy],[ey,oy2],[ey,ocy],
-      [ecy,oy],[ecy,oy2],[ecy,ocy],
-      [ey2,oy],[ey2,oy2],[ey2,ocy]
-    ];
-    yPairs.forEach(function(p){
-      if(snapY===null&&Math.abs(p[0]-p[1])<THRESH){
-        el.y+=p[1]-p[0];
-        snapY=p[1];
-      }
-    });
+    var xPairs=[[ex,ox],[ex,ox2],[ex,ocx],[ecx,ox],[ecx,ox2],[ecx,ocx],[ex2,ox],[ex2,ox2],[ex2,ocx]];
+    xPairs.forEach(function(p){if(snapX===null&&Math.abs(p[0]-p[1])<THRESH){el.x+=p[1]-p[0];snapX=p[1];}});
+    var yPairs=[[ey,oy],[ey,oy2],[ey,ocy],[ecy,oy],[ecy,oy2],[ecy,ocy],[ey2,oy],[ey2,oy2],[ey2,ocy]];
+    yPairs.forEach(function(p){if(snapY===null&&Math.abs(p[0]-p[1])<THRESH){el.y+=p[1]-p[0];snapY=p[1];}});
   });
 
-  // Vẽ guide lines
-  var cv=document.getElementById('cv');
-  if(snapX!==null){
-    var g=document.createElement('div');
-    g.style.cssText='position:absolute;top:0;bottom:0;width:1px;background:#22d3ee;opacity:.8;pointer-events:none;z-index:800;left:'+snapX+'px;';
-    cv.appendChild(g);_guideLines.push(g);
-  }
-  if(snapY!==null){
-    var g=document.createElement('div');
-    g.style.cssText='position:absolute;left:0;right:0;height:1px;background:#22d3ee;opacity:.8;pointer-events:none;z-index:800;top:'+snapY+'px;';
-    cv.appendChild(g);_guideLines.push(g);
-  }
+  if(snapX!==null)_drawGuide(true,snapX,'#22d3ee');
+  if(snapY!==null)_drawGuide(false,snapY,'#22d3ee');
+}
+
+// Snap + guide cho GROUP drag
+function snapGuidesGroup(bounds){
+  clearGuides();
+  var gx=bounds.x,gy=bounds.y,gw=bounds.w,gh=bounds.h;
+  var gcx=gx+gw/2,gcy=gy+gh/2,gx2=gx+gw,gy2=gy+gh;
+  var snapX=null,snapY=null;
+  var THRESH=SNAP_THRESHOLD;
+
+  // Chỉ so sánh với elements NGOÀI group
+  var outsiders=els.filter(function(e){return selGroup.indexOf(e.id)<0;});
+  outsiders.forEach(function(o){
+    var ap=getAbsPos(o);
+    var ox=ap.x,oy=ap.y,ow=o.w,oh=o.h;
+    var ocx=ox+ow/2,ocy=oy+oh/2,ox2=ox+ow,oy2=oy+oh;
+    var xPairs=[[gx,ox],[gx,ox2],[gx,ocx],[gcx,ocx],[gcx,ox],[gcx,ox2],[gx2,ox],[gx2,ox2],[gx2,ocx]];
+    xPairs.forEach(function(p){if(snapX===null&&Math.abs(p[0]-p[1])<THRESH){snapX={delta:p[1]-p[0],val:p[1]};}});
+    var yPairs=[[gy,oy],[gy,oy2],[gy,ocy],[gcy,ocy],[gcy,oy],[gcy,oy2],[gy2,oy],[gy2,oy2],[gy2,ocy]];
+    yPairs.forEach(function(p){if(snapY===null&&Math.abs(p[0]-p[1])<THRESH){snapY={delta:p[1]-p[0],val:p[1]};}});
+  });
+
+  if(snapX!==null)_drawGuide(true,snapX.val,'#22d3ee');
+  if(snapY!==null)_drawGuide(false,snapY.val,'#22d3ee');
+
+  return{dx:snapX?snapX.delta:0, dy:snapY?snapY.delta:0};
 }
