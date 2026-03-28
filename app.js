@@ -1,5 +1,4 @@
 // ═══════════════════════════════════════════════
-// APP.JS — Roblox UI Builder v3.1
 // MỤC LỤC:
 //  §1  STATE & CONSTANTS
 //  §2  UTILS
@@ -26,7 +25,7 @@ var els=[],sel=null,selGroup=[],tool='sel',idc=0,hist=[],dtool=null,etab='lua';
 var rulerOn=false;
 var tMode=0,TMODES=['Scale','Move','Rotate','All','Warp'],TICONS=['⤢','✥','↻','⊕','⌀'];
 var hierDrag=null;
-var VERSION='Alpha 0.0.6.5';
+var VERSION='Alpha 0.0.6.6';
 var distGuideOn=true; // tia đỏ khoảng cách, mặc định bật
 
 var DEFS={
