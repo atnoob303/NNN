@@ -25,7 +25,7 @@ var els=[],sel=null,selGroup=[],tool='sel',idc=0,hist=[],dtool=null,etab='lua';
 var rulerOn=false;
 var tMode=0,TMODES=['Scale','Move','Rotate','All','Warp'],TICONS=['⤢','✥','↻','⊕','⌀'];
 var hierDrag=null;
-var VERSION='Alpha 0.0.6.6';
+var VERSION='Alpha 0.0.6.7';
 var distGuideOn=true; // tia đỏ khoảng cách, mặc định bật
 
 var DEFS={
@@ -139,6 +139,12 @@ function tryReparent(drag){
   }
 }
 
+// Trả về absolute x,y của el (dùng cho snap/guides)
+function getElAbsXY(el) {
+  var ap = getAbsPos(el);
+  return { x: ap.x, y: ap.y, w: el.w, h: el.h };
+}
+
 // §4 TRANSFORM MODE
 function cycleTransformMode(){
   tMode=(tMode+1)%TMODES.length;updateTransformUI();
@@ -250,29 +256,72 @@ function addWarpHandles(d,el){
 }
 
 // §9 DRAG & SCALE & ROTATE
-function startScaleHandle(el,pos,e){
-  saveH();var sx=e.clientX,sy=e.clientY,ox=el.x,oy=el.y,ow=el.w,oh=el.h;
-  function mm(ev){
-    var dx=ev.clientX-sx,dy=ev.clientY-sy,sq=ev.shiftKey,nw=ow,nh=oh,nx=ox,ny=oy;
-    if(pos==='tr'||pos==='mr'||pos==='br')nw=Math.max(20,ow+dx);
-    if(pos==='tl'||pos==='ml'||pos==='bl'){nw=Math.max(20,ow-dx);nx=ox+ow-nw;}
-    if(pos==='bl'||pos==='bc'||pos==='br')nh=Math.max(20,oh+dy);
-    if(pos==='tl'||pos==='tc'||pos==='tr'){nh=Math.max(20,oh-dy);ny=oy+oh-nh;}
-    if(sq&&(pos==='tl'||pos==='tr'||pos==='bl'||pos==='br')){var s=Math.max(nw,nh);nw=s;nh=s;if(pos==='tl'){nx=ox+ow-s;ny=oy+oh-s;}if(pos==='tr')ny=oy+oh-s;if(pos==='bl')nx=ox+ow-s;}
-    if(pos==='tc'||pos==='bc'){nw=ow;nx=ox;}if(pos==='ml'||pos==='mr'){nh=oh;ny=oy;}
-    el.w=nw;el.h=nh;el.x=nx;el.y=ny;
-    renderEl(el);renderProps();updInfo(el);updateRuler(el);
+function startScaleHandle(el, pos, e) {
+  saveH();
+  var sx = e.clientX, sy = e.clientY;
+  var ox = el.x, oy = el.y, ow = el.w, oh = el.h;
+
+  // Snapshot absolute position của tất cả con
+  // để giữ cố định khi cha resize
+  var childSnaps = getDescendants(el.id).map(function(c) {
+    var abs = getAbsPos(c);
+    return { el: c, ax: abs.x, ay: abs.y };
+  });
+
+  function mm(ev) {
+    var dx = ev.clientX - sx, dy = ev.clientY - sy;
+    var sq = ev.shiftKey, nw = ow, nh = oh, nx = ox, ny = oy;
+
+    if (pos === 'tr' || pos === 'mr' || pos === 'br') nw = Math.max(20, ow + dx);
+    if (pos === 'tl' || pos === 'ml' || pos === 'bl') { nw = Math.max(20, ow - dx); nx = ox + ow - nw; }
+    if (pos === 'bl' || pos === 'bc' || pos === 'br') nh = Math.max(20, oh + dy);
+    if (pos === 'tl' || pos === 'tc' || pos === 'tr') { nh = Math.max(20, oh - dy); ny = oy + oh - nh; }
+    if (sq && (pos === 'tl' || pos === 'tr' || pos === 'bl' || pos === 'br')) {
+      var s = Math.max(nw, nh); nw = s; nh = s;
+      if (pos === 'tl') { nx = ox + ow - s; ny = oy + oh - s; }
+      if (pos === 'tr') ny = oy + oh - s;
+      if (pos === 'bl') nx = ox + ow - s;
+    }
+    if (pos === 'tc' || pos === 'bc') { nw = ow; nx = ox; }
+    if (pos === 'ml' || pos === 'mr') { nh = oh; ny = oy; }
+
+    el.w = nw; el.h = nh; el.x = nx; el.y = ny;
+
+    // ── Fix Bug 3+4: giữ absolute position của frame con cố định ──
+    childSnaps.forEach(function(s) {
+      var c = s.el;
+      var par = getEl(c.parentId);
+      if (!par) return;
+      var pa = getAbsPos(par);
+      var pcx = pa.x + par.w / 2, pcy = pa.y + par.h / 2;
+      var pr = (pa.rot || 0) * Math.PI / 180;
+      // Tính lại relative từ absolute cũ
+      var relX = s.ax + c.w / 2 - pcx;
+      var relY = s.ay + c.h / 2 - pcy;
+      // Rotate ngược lại
+      var cos = Math.cos(-pr), sin = Math.sin(-pr);
+      c.x = relX * cos - relY * sin;
+      c.y = relX * sin + relY * cos;
+      renderEl(c);
+    });
+
+    renderEl(el);
+    renderProps();
+    updInfo(el);
+    updateRuler(el);
     drawResizeGuides(el);
-    drawBoundingBox(el.x,el.y,el.w,el.h);
-    drawDistanceGuides(el.x,el.y,el.w,el.h);
-    getDescendants(el.id).forEach(renderEl);
+    drawBoundingBox(el.x, el.y, el.w, el.h);
+    drawDistanceGuides(el.x, el.y, el.w, el.h);
   }
-  function mu(){
+
+  function mu() {
     clearResizeGuides();
-    document.removeEventListener('mousemove',mm);
-    document.removeEventListener('mouseup',mu);
+    document.removeEventListener('mousemove', mm);
+    document.removeEventListener('mouseup', mu);
   }
-  document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
+
+  document.addEventListener('mousemove', mm);
+  document.addEventListener('mouseup', mu);
 }
 function startRotate(el,e){
   saveH();var d=document.getElementById(el.id),rc=d.getBoundingClientRect();
@@ -642,16 +691,28 @@ function dupSel(){
   c.id='el_'+(++idc);c.name=o.type+idc;c.x+=20;c.y+=20;
   els.push(c);renderEl(c);selEl(c.id);renderHier();
 }
-function delSel(){
-  if(!sel)return;saveH();
-  selGroup.forEach(function(id){
-    getChildren(id).forEach(function(c){c.parentId=null;});
-    var d=document.getElementById(id);if(d)d.remove();
-    els=els.filter(function(e){return e.id!==id;});
+function delSel() {
+  if (!sel) return;
+  saveH();
+
+  // Thu thập tất cả id cần xóa: selected + toàn bộ descendants
+  var toDelete = [];
+  selGroup.forEach(function(id) {
+    toDelete.push(id);
+    getDescendants(id).forEach(function(c) { toDelete.push(c.id); });
   });
-  sel=null;selGroup=[];
+
+  // Xóa DOM và khỏi mảng els
+  toDelete.forEach(function(id) {
+    var d = document.getElementById(id);
+    if (d) d.remove();
+  });
+  els = els.filter(function(e) { return toDelete.indexOf(e.id) < 0; });
+
+  sel = null; selGroup = [];
   clearGroupBox();
-  renderProps();renderHier();hint();
+  renderProps(); renderHier(); hint();
+  toast('🗑 Deleted ' + toDelete.length + ' element(s)');
 }
 function clearAll(){
   if(els.length&&!confirm('Xóa tất cả?'))return;saveH();
@@ -1092,44 +1153,86 @@ function buildHTML(){
 }
 
 // §17 KEYBOARD
-document.addEventListener('keydown',function(e){
-  var t=document.activeElement.tagName;
-  if(t==='INPUT'||t==='TEXTAREA'||t==='SELECT')return;
-  if(e.key==='Delete'||e.key==='Backspace')delSel();
-  if(e.ctrlKey&&e.key==='z'){e.preventDefault();undo();}
-  if(e.ctrlKey&&e.key==='d'){e.preventDefault();dupSel();}
-  if(e.ctrlKey&&e.key==='p'){
+// ─── FIX: flag để phân biệt Ctrl đơn vs Ctrl+phím khác ───
+var _ctrlUsed = false;
+
+document.addEventListener('keydown', function(e) {
+  var t = document.activeElement.tagName;
+  if (t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT') return;
+
+  // Đánh dấu Ctrl đang được dùng kết hợp
+  if (e.ctrlKey && e.key !== 'Control') _ctrlUsed = true;
+
+  if (e.key === 'Delete' || e.key === 'Backspace') delSel();
+  if (e.ctrlKey && e.key === 'z') { e.preventDefault(); undo(); }
+  if (e.ctrlKey && e.key === 'd') { e.preventDefault(); dupSel(); }
+
+  // ─── MỚI: Ctrl+A → Select All ───
+  if (e.ctrlKey && e.key === 'a') {
     e.preventDefault();
-    var child=getEl(sel);
-    if(!child){toast('⚠ Chọn element trước!');return;}
-    var cx=child.x+child.w/2,cy=child.y+child.h/2,best=null,bestA=Infinity;
-    els.forEach(function(el){
-      if(el.id===child.id||isAncestor(el.id,child.id))return;
-      var ap=getAbsPos(el);
-      if(cx>=ap.x&&cx<=ap.x+el.w&&cy>=ap.y&&cy<=ap.y+el.h){
-        var area=el.w*el.h;
-        if(area<bestA){bestA=area;best=el;}
-      }
-    });
-    if(best){
-      saveH();setParent(child,best.id);
-      renderEl(child);getDescendants(child.id).forEach(renderEl);
-      renderHier();renderProps();
-      toast('📦 '+child.name+' → child của '+best.name);
-    }else{toast('⚠ Không tìm thấy parent phù hợp!');}
+    if (!els.length) return;
+    selGroup = els.map(function(e) { return e.id; });
+    sel = selGroup[selGroup.length - 1];
+    els.forEach(function(e) { renderEl(e); });
+    updateAlignBar();
+    renderProps();
+    renderHier();
+    renderGroupBox();
+    toast('✦ Selected all ' + els.length + ' elements');
     return;
   }
-  if(e.key==='Escape'){setTool('sel');selEl(null);renderProps();dtool=null;}
-  var el=getEl(sel);if(!el)return;
-  var st=e.shiftKey?10:1;
-  if(e.key==='ArrowUp'){saveH();el.y=Math.max(0,el.y-st);renderEl(el);getDescendants(el.id).forEach(renderEl);}
-  if(e.key==='ArrowDown'){saveH();el.y+=st;renderEl(el);getDescendants(el.id).forEach(renderEl);}
-  if(e.key==='ArrowLeft'){saveH();el.x=Math.max(0,el.x-st);renderEl(el);getDescendants(el.id).forEach(renderEl);}
-  if(e.key==='ArrowRight'){saveH();el.x+=st;renderEl(el);getDescendants(el.id).forEach(renderEl);}
+
+  if (e.ctrlKey && e.key === 'p') {
+    e.preventDefault();
+    var child = getEl(sel);
+    if (!child) { toast('⚠ Chọn element trước!'); return; }
+    var cx = child.x + child.w / 2, cy = child.y + child.h / 2, best = null, bestA = Infinity;
+    els.forEach(function(el) {
+      if (el.id === child.id || isAncestor(el.id, child.id)) return;
+      var ap = getAbsPos(el);
+      if (cx >= ap.x && cx <= ap.x + el.w && cy >= ap.y && cy <= ap.y + el.h) {
+        var area = el.w * el.h;
+        if (area < bestA) { bestA = area; best = el; }
+      }
+    });
+    if (best) {
+      saveH(); setParent(child, best.id);
+      renderEl(child); getDescendants(child.id).forEach(renderEl);
+      renderHier(); renderProps();
+      toast('📦 ' + child.name + ' → child của ' + best.name);
+    } else { toast('⚠ Không tìm thấy parent phù hợp!'); }
+    return;
+  }
+
+  if (e.key === 'Escape') { setTool('sel'); selEl(null); renderProps(); dtool = null; }
+
+  var el = getEl(sel); if (!el) return;
+  var st = e.shiftKey ? 10 : 1;
+
+  // ─── FIX: debounce saveH cho arrow keys ───
+  if (e.key === 'ArrowUp' || e.key === 'ArrowDown' || e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+    clearTimeout(_arrowSaveTimer);
+    _arrowSaveTimer = setTimeout(saveH, 300);
+  }
+  if (e.key === 'ArrowUp')    { el.y = Math.max(0, el.y - st); renderEl(el); getDescendants(el.id).forEach(renderEl); }
+  if (e.key === 'ArrowDown')  { el.y += st;                    renderEl(el); getDescendants(el.id).forEach(renderEl); }
+  if (e.key === 'ArrowLeft')  { el.x = Math.max(0, el.x - st); renderEl(el); getDescendants(el.id).forEach(renderEl); }
+  if (e.key === 'ArrowRight') { el.x += st;                    renderEl(el); getDescendants(el.id).forEach(renderEl); }
 });
-document.addEventListener('keyup',function(e){
-  if(e.key==='Control'){var t=document.activeElement.tagName;if(t==='INPUT'||t==='TEXTAREA'||t==='SELECT')return;cycleTransformMode();}
+
+// ─── FIX: chỉ cycleTransformMode khi Ctrl nhả MÀ KHÔNG kết hợp phím khác ───
+document.addEventListener('keyup', function(e) {
+  if (e.key === 'Control') {
+    var t = document.activeElement.tagName;
+    if (t === 'INPUT' || t === 'TEXTAREA' || t === 'SELECT') { _ctrlUsed = false; return; }
+    if (!_ctrlUsed) cycleTransformMode();
+    _ctrlUsed = false;
+  }
 });
+
+// Arrow key debounce timer
+var _arrowSaveTimer = null;
+
 
 // §18 INIT
 (function(){
@@ -1287,7 +1390,8 @@ function updateRulerGroup(bounds,grp){
   html+='<div class="rul-single rul-lbl" style="left:'+(bx+bw+8)+'px;top:'+(by+bh/2)+'px;color:#22d3ee">H: '+bh+'px</div>';
   // Tia VÀNG — từng element trong group
   grp.forEach(function(el){
-    var x=Math.round(el.x),y=Math.round(el.y),w=Math.round(el.w),h=Math.round(el.h);
+    var _ap=getAbsPos(el);
+    var x=Math.round(_ap.x),y=Math.round(_ap.y),w=Math.round(el.w),h=Math.round(el.h);
     html+='<div class="rul-single rul-line rul-h" style="top:'+y+'px;border-color:#fbbf24;opacity:.5"></div>';
     html+='<div class="rul-single rul-line rul-h" style="top:'+(y+h)+'px;border-color:#fbbf24;opacity:.5"></div>';
     html+='<div class="rul-single rul-line rul-v" style="left:'+x+'px;border-color:#fbbf24;opacity:.5"></div>';
@@ -1360,57 +1464,82 @@ function drawResizeGuides(el){
   });
 }
 
-// Tia ĐỎ — khoảng cách dạng đoạn ngắn overflow, mờ dần
-var DIST_INTERVALS=[5,8,12,15];
-function drawDistanceGuides(x,y,w,h){
-  if(!distGuideOn)return;
-  var ov=document.getElementById('ruler-overlay');
-  if(!ov)return;
-  if(ov.style.display==='none')ov.style.display='block';
-  ov.querySelectorAll('.rul-dist').forEach(function(e){e.remove();});
+// Tia ĐỎ — khoảng cách + snap theo tia đỏ khi drag
+// ─── MỚI: tia đỏ giờ thể hiện khoảng cách thực từ el đang kéo đến các element khác
+//          và có snap khi el gần đúng khoảng cách đó ───
+var DIST_SNAP_THRESHOLD = 4; // px để snap theo khoảng cách đỏ
 
-  var OVERFLOW=10;
-  var opacities=[0.75,0.55,0.38,0.22];
+function drawDistanceGuides(x, y, w, h) {
+  if (!distGuideOn) return;
+  var ov = document.getElementById('ruler-overlay');
+  if (!ov) return;
+  if (ov.style.display === 'none') ov.style.display = 'block';
+  ov.querySelectorAll('.rul-dist').forEach(function(e) { e.remove(); });
 
-  // Vẽ tia đỏ trên TỪNG element khác
-  els.forEach(function(o){
-    if(selGroup.indexOf(o.id)>=0)return;
-    var ap=getAbsPos(o);
-    var ox=Math.round(ap.x),oy=Math.round(ap.y),ow=Math.round(o.w),oh=Math.round(o.h);
+  els.forEach(function(o) {
+    if (selGroup.indexOf(o.id) >= 0) return;
 
-    DIST_INTERVALS.forEach(function(dist,i){
-      var op=opacities[i];
-      var color='rgba(239,68,68,'+op+')';
+    // ── FIX Bug 1: dùng absolute position ──
+    var ap = getAbsPos(o);
+    var ox = Math.round(ap.x), oy = Math.round(ap.y);
+    var ow = Math.round(o.w), oh = Math.round(o.h);
 
-      // Tia NGANG trên/dưới element khác
-      [oy-dist, oy+oh+dist].forEach(function(ty){
-        var d=document.createElement('div');
-        d.className='rul-dist';
-        d.style.cssText=[
-          'position:absolute','pointer-events:none','z-index:708',
-          'left:'+(ox-OVERFLOW)+'px','top:'+ty+'px',
-          'width:'+(ow+OVERFLOW*2)+'px','height:0',
-          'border-top:1px dashed '+color
-        ].join(';');
-        ov.appendChild(d);
-      });
+    var ex = Math.round(x), ey = Math.round(y), ew = Math.round(w), eh = Math.round(h);
+    var ex2 = ex + ew, ey2 = ey + eh, ox2 = ox + ow, oy2 = oy + oh;
 
-      // Tia DỌC trái/phải element khác
-      [ox-dist, ox+ow+dist].forEach(function(lx){
-        var d=document.createElement('div');
-        d.className='rul-dist';
-        d.style.cssText=[
-          'position:absolute','pointer-events:none','z-index:708',
-          'left:'+lx+'px','top:'+(oy-OVERFLOW)+'px',
-          'width:0','height:'+(oh+OVERFLOW*2)+'px',
-          'border-left:1px dashed '+color
-        ].join(';');
-        ov.appendChild(d);
-      });
-    });
+    var overlapV = ey < oy2 && ey2 > oy;
+    var overlapH = ex < ox2 && ex2 > ox;
+    var color = 'rgba(239,68,68,0.7)';
+
+    if (overlapV) {
+      if (ox > ex2) {
+        var gapR = ox - ex2;
+        _makeDistLine(ov, true, ex2, ey + eh / 2 - 1, gapR, color);
+        _makeDistLabel(ov, ex2 + gapR / 2, ey + eh / 2 - 10, gapR + 'px', color);
+      }
+      if (ex > ox2) {
+        var gapL = ex - ox2;
+        _makeDistLine(ov, true, ox2, ey + eh / 2 - 1, gapL, color);
+        _makeDistLabel(ov, ox2 + gapL / 2, ey + eh / 2 - 10, gapL + 'px', color);
+      }
+    }
+    if (overlapH) {
+      if (oy > ey2) {
+        var gapB = oy - ey2;
+        _makeDistLine(ov, false, ex + ew / 2 - 1, ey2, gapB, color);
+        _makeDistLabel(ov, ex + ew / 2 + 4, ey2 + gapB / 2, gapB + 'px', color);
+      }
+      if (ey > oy2) {
+        var gapT = ey - oy2;
+        _makeDistLine(ov, false, ex + ew / 2 - 1, oy2, gapT, color);
+        _makeDistLabel(ov, ex + ew / 2 + 4, oy2 + gapT / 2, gapT + 'px', color);
+      }
+    }
   });
 }
+// Helper: vẽ đoạn thẳng tia đỏ
+function _makeDistLine(ov, isHoriz, x, y, len, color) {
+  var d = document.createElement('div');
+  d.className = 'rul-dist';
+  if (isHoriz) {
+    d.style.cssText = 'position:absolute;pointer-events:none;z-index:708;' +
+      'left:' + x + 'px;top:' + y + 'px;width:' + len + 'px;height:1px;background:' + color + ';';
+  } else {
+    d.style.cssText = 'position:absolute;pointer-events:none;z-index:708;' +
+      'left:' + x + 'px;top:' + y + 'px;width:1px;height:' + len + 'px;background:' + color + ';';
+  }
+  ov.appendChild(d);
+}
 
+// Helper: label số đo tia đỏ
+function _makeDistLabel(ov, x, y, text, color) {
+  var d = document.createElement('div');
+  d.className = 'rul-dist rul-lbl';
+  d.style.cssText = 'left:' + x + 'px;top:' + y + 'px;color:' + color +
+    ';background:rgba(13,13,20,.85);transform:translate(-50%,-50%);font-size:8px;';
+  d.textContent = text;
+  ov.appendChild(d);
+}
 // Xóa tia vàng resize + nâu bbox + đỏ dist
 function clearResizeGuides(){
   var ov=document.getElementById('ruler-overlay');
@@ -1423,75 +1552,282 @@ function clearResizeGuides(){
 }
 
 // §21 SMART GUIDES
-var _guideLines=[];
-var SNAP_THRESHOLD=6;
+var _guideLines = [];
+// ─── FIX: tăng SNAP_THRESHOLD để bắt được cả "cạnh sát nhau" (gap=0) ───
+var SNAP_THRESHOLD = 8;
 
-function clearGuides(){
-  _guideLines.forEach(function(g){if(g.parentNode)g.parentNode.removeChild(g);});
-  _guideLines=[];
+function clearGuides() {
+  _guideLines.forEach(function(g) { if (g.parentNode) g.parentNode.removeChild(g); });
+  _guideLines = [];
 }
 
-function _drawGuide(isVertical, val, color){
-  var cv=document.getElementById('cv');
-  var g=document.createElement('div');
-  color=color||'#22d3ee';
-  if(isVertical){
-    g.style.cssText='position:absolute;top:0;bottom:0;width:1px;background:'+color+';opacity:.85;pointer-events:none;z-index:800;left:'+val+'px;';
+function _drawGuide(isVertical, val, color) {
+  var cv = document.getElementById('cv');
+  var g = document.createElement('div');
+  color = color || '#22d3ee';
+  if (isVertical) {
+    g.style.cssText = 'position:absolute;top:0;bottom:0;width:1px;background:' + color + ';opacity:.85;pointer-events:none;z-index:800;left:' + val + 'px;';
   } else {
-    g.style.cssText='position:absolute;left:0;right:0;height:1px;background:'+color+';opacity:.85;pointer-events:none;z-index:800;top:'+val+'px;';
+    g.style.cssText = 'position:absolute;left:0;right:0;height:1px;background:' + color + ';opacity:.85;pointer-events:none;z-index:800;top:' + val + 'px;';
   }
-  cv.appendChild(g);_guideLines.push(g);
+  cv.appendChild(g);
+  _guideLines.push(g);
 }
 
-function snapGuides(el){
+// ─── FIX: snapGuides trả về offset đã snap để startDrag áp dụng ───
+// Bổ sung thêm các cặp "cạnh sát cạnh": ex == ox2 và ex2 == ox
+// Đây là nguyên nhân tia xanh bị lệch 1px: cần so ex với ox2 và ex2 với ox
+function snapGuides(el) {
   clearGuides();
-  // Nếu đang kéo group thì không snap từng element
-  if(selGroup.length>1) return;
+  if (selGroup.length > 1) return;
 
-  var others=els.filter(function(e){return e.id!==el.id;});
-  if(!others.length)return;
+  var others = els.filter(function(e) { return e.id !== el.id; });
+  if (!others.length) return;
 
-  var ex=el.x,ey=el.y,ew=el.w,eh=el.h;
-  var ecx=ex+ew/2,ecy=ey+eh/2,ex2=ex+ew,ey2=ey+eh;
-  var snapX=null,snapY=null;
-  var THRESH=SNAP_THRESHOLD;
+  // ── FIX Bug 1: dùng absolute position của el đang kéo ──
+  var eap = getAbsPos(el);
+  var ex = eap.x, ey = eap.y, ew = el.w, eh = el.h;
+  var ecx = ex + ew / 2, ecy = ey + eh / 2, ex2 = ex + ew, ey2 = ey + eh;
+  var snapX = null, snapY = null;
+  var THRESH = SNAP_THRESHOLD;
 
-  others.forEach(function(o){
-    var ap=getAbsPos(o);
-    var ox=ap.x,oy=ap.y,ow=o.w,oh=o.h;
-    var ocx=ox+ow/2,ocy=oy+oh/2,ox2=ox+ow,oy2=oy+oh;
-    var xPairs=[[ex,ox],[ex,ox2],[ex,ocx],[ecx,ox],[ecx,ox2],[ecx,ocx],[ex2,ox],[ex2,ox2],[ex2,ocx]];
-    xPairs.forEach(function(p){if(snapX===null&&Math.abs(p[0]-p[1])<THRESH){el.x+=p[1]-p[0];snapX=p[1];}});
-    var yPairs=[[ey,oy],[ey,oy2],[ey,ocy],[ecy,oy],[ecy,oy2],[ecy,ocy],[ey2,oy],[ey2,oy2],[ey2,ocy]];
-    yPairs.forEach(function(p){if(snapY===null&&Math.abs(p[0]-p[1])<THRESH){el.y+=p[1]-p[0];snapY=p[1];}});
+  others.forEach(function(o) {
+    if (snapX !== null && snapY !== null) return;
+
+    // ── FIX Bug 1: dùng absolute position của other ──
+    var ap = getAbsPos(o);
+    var ox = ap.x, oy = ap.y, ow = o.w, oh = o.h;
+    var ocx = ox + ow / 2, ocy = oy + oh / 2, ox2 = ox + ow, oy2 = oy + oh;
+
+    var xPairs = [
+      [ex,  ox],  [ex,  ox2], [ex,  ocx],
+      [ecx, ox],  [ecx, ocx], [ecx, ox2],
+      [ex2, ox],  [ex2, ox2], [ex2, ocx],
+    ];
+    xPairs.forEach(function(p) {
+      if (snapX === null && Math.abs(p[0] - p[1]) < THRESH) {
+        // Snap delta → áp vào el.x (relative nếu có parent)
+        var delta = p[1] - p[0];
+        el.x += delta;
+        ex = eap.x + delta; ex2 = ex + ew; ecx = ex + ew / 2;
+        snapX = p[1];
+      }
+    });
+
+    var yPairs = [
+      [ey,  oy],  [ey,  oy2], [ey,  ocy],
+      [ecy, oy],  [ecy, ocy], [ecy, oy2],
+      [ey2, oy],  [ey2, oy2], [ey2, ocy],
+    ];
+    yPairs.forEach(function(p) {
+      if (snapY === null && Math.abs(p[0] - p[1]) < THRESH) {
+        var delta = p[1] - p[0];
+        el.y += delta;
+        ey = eap.y + delta; ey2 = ey + eh; ecy = ey + eh / 2;
+        snapY = p[1];
+      }
+    });
   });
 
-  if(snapX!==null)_drawGuide(true,snapX,'#22d3ee');
-  if(snapY!==null)_drawGuide(false,snapY,'#22d3ee');
+  if (snapX !== null) _drawGuide(true,  snapX, '#22d3ee');
+  if (snapY !== null) _drawGuide(false, snapY, '#22d3ee');
+
+  _equalSpacingSnap(el, others, snapX, snapY);
+}
+// ── Equal spacing snap engine ──
+function _equalSpacingSnap(el, others, alreadySnapX, alreadySnapY) {
+  var THRESH = SNAP_THRESHOLD;
+  var ov = document.getElementById('ruler-overlay');
+
+  // Lấy tất cả cặp (A, B) trong others và tính gap giữa chúng
+  // So sánh với gap hiện tại giữa el và A hoặc el và B
+  // Nếu gần bằng → snap + vẽ tia đỏ nối
+
+  // ── NGANG ──
+  if (alreadySnapX === null) {
+    var ex = el.x, ew = el.w, ex2 = ex + ew;
+
+    for (var i = 0; i < others.length; i++) {
+      for (var j = 0; j < others.length; j++) {
+        if (i === j) continue;
+        var A = getAbsPos(others[i]), B = getAbsPos(others[j]);
+        var ax = A.x, aw = others[i].w, ax2 = ax + aw;
+        var bx = B.x, bw = others[j].w, bx2 = bx + bw;
+
+        // Gap giữa A và B (A bên trái B)
+        if (bx >= ax2) {
+          var refGap = bx - ax2;
+
+          // Case 1: el nằm bên phải B, gap el←→B == refGap
+          // → el.x = bx2 + refGap
+          var targetX1 = bx2 + refGap;
+          if (Math.abs(ex - targetX1) < THRESH) {
+            el.x = targetX1;
+            _drawEqualH(ov, ax, ax2, bx, bx2, el.x, el.x + ew, refGap,
+              Math.min(A.y + others[i].h, B.y + others[j].h, el.y + el.h) + 8);
+            return;
+          }
+
+          // Case 2: el nằm bên trái A, gap el←→A == refGap
+          // → el.x + ew = ax - refGap  →  el.x = ax - refGap - ew
+          var targetX2 = ax - refGap - ew;
+          if (Math.abs(ex - targetX2) < THRESH) {
+            el.x = targetX2;
+            _drawEqualH(ov, el.x, el.x + ew, ax, ax2, bx, bx2, refGap,
+              Math.min(A.y + others[i].h, B.y + others[j].h, el.y + el.h) + 8);
+            return;
+          }
+
+          // Case 3: el nằm giữa A và B, gap A←→el == gap el←→B == refGap/2... 
+          // (chỉ áp dụng nếu refGap đủ chỗ cho el)
+          // → ax2 + refGap == el.x  (gap A→el = refGap)  VÀ  el.x2 + refGap == bx  → kiểm tra
+          var targetX3 = ax2 + refGap;
+          if (Math.abs(ex - targetX3) < THRESH && targetX3 + ew <= bx - refGap + THRESH) {
+            el.x = targetX3;
+            _drawEqualH(ov, ax, ax2, el.x, el.x + ew, bx, bx2, refGap,
+              Math.min(A.y + others[i].h, B.y + others[j].h, el.y + el.h) + 8);
+            return;
+          }
+        }
+      }
+    }
+  }
+
+  // ── DỌC ──
+  if (alreadySnapY === null) {
+    var ey = el.y, eh = el.h, ey2 = ey + eh;
+
+    for (var i = 0; i < others.length; i++) {
+      for (var j = 0; j < others.length; j++) {
+        if (i === j) continue;
+        var A = getAbsPos(others[i]), B = getAbsPos(others[j]);
+        var ay = A.y, ah = others[i].h, ay2 = ay + ah;
+        var by = B.y, bh = others[j].h, by2 = by + bh;
+
+        if (by >= ay2) {
+          var refGap = by - ay2;
+
+          // Case 1: el bên dưới B
+          var targetY1 = by2 + refGap;
+          if (Math.abs(ey - targetY1) < THRESH) {
+            el.y = targetY1;
+            _drawEqualV(ov, ay, ay2, by, by2, el.y, el.y + eh, refGap,
+              Math.max(A.x + others[i].w, B.x + others[j].w, el.x + el.w) + 8);
+            return;
+          }
+
+          // Case 2: el bên trên A
+          var targetY2 = ay - refGap - eh;
+          if (Math.abs(ey - targetY2) < THRESH) {
+            el.y = targetY2;
+            _drawEqualV(ov, el.y, el.y + eh, ay, ay2, by, by2, refGap,
+              Math.max(A.x + others[i].w, B.x + others[j].w, el.x + el.w) + 8);
+            return;
+          }
+
+          // Case 3: el nằm giữa A và B
+          var targetY3 = ay2 + refGap;
+          if (Math.abs(ey - targetY3) < THRESH && targetY3 + eh <= by - refGap + THRESH) {
+            el.y = targetY3;
+            _drawEqualV(ov, ay, ay2, el.y, el.y + eh, by, by2, refGap,
+              Math.max(A.x + others[i].w, B.x + others[j].w, el.x + el.w) + 8);
+            return;
+          }
+        }
+      }
+    }
+  }
 }
 
-// Snap + guide cho GROUP drag
-function snapGuidesGroup(bounds){
-  clearGuides();
-  var gx=bounds.x,gy=bounds.y,gw=bounds.w,gh=bounds.h;
-  var gcx=gx+gw/2,gcy=gy+gh/2,gx2=gx+gw,gy2=gy+gh;
-  var snapX=null,snapY=null;
-  var THRESH=SNAP_THRESHOLD;
+// Vẽ tia đỏ equal spacing NGANG — nối 3 đoạn với tick + label
+function _drawEqualH(ov, x1s, x1e, x2s, x2e, x3s, x3e, gap, y) {
+  if (!ov || !distGuideOn) return;
+  ov.querySelectorAll('.rul-dist').forEach(function(e) { e.remove(); });
+  var col = 'rgba(239,68,68,0.85)';
+  var tickH = 6;
 
-  // Chỉ so sánh với elements NGOÀI group
-  var outsiders=els.filter(function(e){return selGroup.indexOf(e.id)<0;});
-  outsiders.forEach(function(o){
-    var ap=getAbsPos(o);
-    var ox=ap.x,oy=ap.y,ow=o.w,oh=o.h;
-    var ocx=ox+ow/2,ocy=oy+oh/2,ox2=ox+ow,oy2=oy+oh;
-    var xPairs=[[gx,ox],[gx,ox2],[gx,ocx],[gcx,ocx],[gcx,ox],[gcx,ox2],[gx2,ox],[gx2,ox2],[gx2,ocx]];
-    xPairs.forEach(function(p){if(snapX===null&&Math.abs(p[0]-p[1])<THRESH){snapX={delta:p[1]-p[0],val:p[1]};}});
-    var yPairs=[[gy,oy],[gy,oy2],[gy,ocy],[gcy,ocy],[gcy,oy],[gcy,oy2],[gy2,oy],[gy2,oy2],[gy2,ocy]];
-    yPairs.forEach(function(p){if(snapY===null&&Math.abs(p[0]-p[1])<THRESH){snapY={delta:p[1]-p[0],val:p[1]};}});
+  // 3 đoạn nối giữa các frame
+  [[x1e, x2s], [x2e, x3s]].forEach(function(seg) {
+    if (seg[1] <= seg[0]) return;
+    _makeDistLine(ov, true, seg[0], y, seg[1] - seg[0], col);
+    // tick đầu
+    _makeDistLine(ov, false, seg[0], y - tickH / 2, tickH, col);
+    // tick cuối
+    _makeDistLine(ov, false, seg[1] - 1, y - tickH / 2, tickH, col);
   });
 
-  if(snapX!==null)_drawGuide(true,snapX.val,'#22d3ee');
-  if(snapY!==null)_drawGuide(false,snapY.val,'#22d3ee');
+  // Label gap ở giữa mỗi đoạn
+  [[x1e, x2s], [x2e, x3s]].forEach(function(seg) {
+    if (seg[1] <= seg[0]) return;
+    _makeDistLabel(ov, (seg[0] + seg[1]) / 2, y - 10, gap + 'px', col);
+  });
 
-  return{dx:snapX?snapX.delta:0, dy:snapY?snapY.delta:0};
+  // Highlight cạnh 3 frame bằng đường dọc mờ
+  [x1s, x1e, x2s, x2e, x3s, x3e].forEach(function(lx) {
+    _makeDistLine(ov, false, lx, y - 14, 20, 'rgba(239,68,68,0.25)');
+  });
+}
+
+// Vẽ tia đỏ equal spacing DỌC — nối 3 đoạn với tick + label
+function _drawEqualV(ov, y1s, y1e, y2s, y2e, y3s, y3e, gap, x) {
+  if (!ov || !distGuideOn) return;
+  ov.querySelectorAll('.rul-dist').forEach(function(e) { e.remove(); });
+  var col = 'rgba(239,68,68,0.85)';
+  var tickW = 6;
+
+  [[y1e, y2s], [y2e, y3s]].forEach(function(seg) {
+    if (seg[1] <= seg[0]) return;
+    _makeDistLine(ov, false, x, seg[0], seg[1] - seg[0], col);
+    _makeDistLine(ov, true, x - tickW / 2, seg[0], tickW, col);
+    _makeDistLine(ov, true, x - tickW / 2, seg[1] - 1, tickW, col);
+  });
+
+  [[y1e, y2s], [y2e, y3s]].forEach(function(seg) {
+    if (seg[1] <= seg[0]) return;
+    _makeDistLabel(ov, x + 10, (seg[0] + seg[1]) / 2, gap + 'px', col);
+  });
+
+  [y1s, y1e, y2s, y2e, y3s, y3e].forEach(function(ly) {
+    _makeDistLine(ov, true, x - 14, ly, 20, 'rgba(239,68,68,0.25)');
+  });
+}
+
+// ─── Snap + guide cho GROUP drag (cũng fix off-by-1) ───
+function snapGuidesGroup(bounds) {
+  clearGuides();
+  var gx = bounds.x, gy = bounds.y, gw = bounds.w, gh = bounds.h;
+  var gcx = gx + gw / 2, gcy = gy + gh / 2, gx2 = gx + gw, gy2 = gy + gh;
+  var snapX = null, snapY = null;
+  var THRESH = SNAP_THRESHOLD;
+
+  var outsiders = els.filter(function(e) { return selGroup.indexOf(e.id) < 0; });
+  outsiders.forEach(function(o) {
+    if (snapX !== null && snapY !== null) return;
+    var ap = getAbsPos(o);
+    var ox = ap.x, oy = ap.y, ow = o.w, oh = o.h;
+    var ocx = ox + ow / 2, ocy = oy + oh / 2, ox2 = ox + ow, oy2 = oy + oh;
+
+    var xPairs = [
+      [gx,  ox],  [gx,  ox2],  [gx,  ocx],
+      [gcx, ox],  [gcx, ocx],  [gcx, ox2],
+      [gx2, ox],  [gx2, ox2],  [gx2, ocx],
+    ];
+    xPairs.forEach(function(p) {
+      if (snapX === null && Math.abs(p[0] - p[1]) < THRESH) snapX = { delta: p[1] - p[0], val: p[1] };
+    });
+
+    var yPairs = [
+      [gy,  oy],  [gy,  oy2],  [gy,  ocy],
+      [gcy, oy],  [gcy, ocy],  [gcy, oy2],
+      [gy2, oy],  [gy2, oy2],  [gy2, ocy],
+    ];
+    yPairs.forEach(function(p) {
+      if (snapY === null && Math.abs(p[0] - p[1]) < THRESH) snapY = { delta: p[1] - p[0], val: p[1] };
+    });
+  });
+
+  if (snapX !== null) _drawGuide(true,  snapX.val, '#22d3ee');
+  if (snapY !== null) _drawGuide(false, snapY.val, '#22d3ee');
+
+  return { dx: snapX ? snapX.delta : 0, dy: snapY ? snapY.delta : 0 };
 }
