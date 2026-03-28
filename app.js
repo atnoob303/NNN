@@ -25,7 +25,7 @@ var els=[],sel=null,selGroup=[],tool='sel',idc=0,hist=[],dtool=null,etab='lua';
 var rulerOn=false;
 var tMode=0,TMODES=['Scale','Move','Rotate','All','Warp'],TICONS=['⤢','✥','↻','⊕','⌀'];
 var hierDrag=null;
-var VERSION='Alpha 0.0.6.8/5';
+var VERSION='Alpha 0.0.6.9';
 var distGuideOn=true; // tia đỏ khoảng cách, mặc định bật
 
 var DEFS={
@@ -561,6 +561,7 @@ if(tool==='drw'){
   var el=mkEl(dtool||'Frame',ds.x,ds.y,10,10);
   saveH();els.push(el);renderEl(el);selEl(el.id);hint();
   window._drawingEl=el;
+
   function mm(ev){
     var nx=ev.clientX-r.left,ny=ev.clientY-r.top;
     el.x=Math.min(ds.x,nx);el.y=Math.min(ds.y,ny);
@@ -569,16 +570,56 @@ if(tool==='drw'){
     renderEl(el);updInfo(el);
     drawBoundingBox(el.x,el.y,el.w,el.h);
     drawDistanceGuides(el.x,el.y,el.w,el.h);
+
+    // ── Highlight frame đang bị đè lên màu vàng ──
+    var ecx=el.x+el.w/2,ecy=el.y+el.h/2,best=null,bestA=Infinity;
+    els.forEach(function(o){
+      if(o.id===el.id)return;
+      var ap=getAbsPos(o);
+      if(ecx>=ap.x&&ecx<=ap.x+o.w&&ecy>=ap.y&&ecy<=ap.y+o.h){
+        var area=o.w*o.h;if(area<bestA){bestA=area;best=o;}
+      }
+    });
+    els.forEach(function(o){
+      if(o.id===el.id)return;
+      var d=document.getElementById(o.id);
+      if(d)d.style.outline=(best&&o.id===best.id)?'2px solid #fbbf24':'';
+    });
   }
+
   function mu(){
     if(el.w<20)el.w=DW[el.type]||160;
     if(el.h<20)el.h=DH[el.type]||80;
     clearResizeGuides();
+
+    // ── Xóa highlight vàng ──
+    els.forEach(function(o){
+      var d=document.getElementById(o.id);
+      if(d&&o.id!==el.id)d.style.outline='';
+    });
+
+    // ── Auto-parent nếu đang đè lên frame khác ──
+    var ecx=el.x+el.w/2,ecy=el.y+el.h/2,best=null,bestA=Infinity;
+    els.forEach(function(o){
+      if(o.id===el.id)return;
+      var ap=getAbsPos(o);
+      if(ecx>=ap.x&&ecx<=ap.x+o.w&&ecy>=ap.y&&ecy<=ap.y+o.h){
+        var area=o.w*o.h;if(area<bestA){bestA=area;best=o;}
+      }
+    });
+    if(best){
+      setParent(el,best.id);
+      renderEl(el);
+      toast('📦 '+el.name+' → '+best.name);
+    }
+
     renderEl(el);renderProps();setTool('sel');dtool=null;
     window._drawingEl=null;
+    renderHier();
     document.removeEventListener('mousemove',mm);
     document.removeEventListener('mouseup',mu);
   }
+
   document.addEventListener('mousemove',mm);
   document.addEventListener('mouseup',mu);
   return;
