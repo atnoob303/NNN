@@ -25,7 +25,7 @@ var els=[],sel=null,selGroup=[],tool='sel',idc=0,hist=[],dtool=null,etab='lua';
 var rulerOn=false;
 var tMode=0,TMODES=['Scale','Move','Rotate','All','Warp'],TICONS=['⤢','✥','↻','⊕','⌀'];
 var hierDrag=null;
-var VERSION='Alpha 0.0.6.15';
+var VERSION='Alpha 0.0.6.16';
 var distGuideOn=true;
 
 var DEFS={
@@ -374,34 +374,60 @@ function startScaleHandle(el, pos, e) {
   document.addEventListener('mouseup', mu);
 }
 
-function startRotate(el, e) {
+function startRotate(el,e){
   saveH();
-  var ap = getAbsPos(el);
-  var caRect = document.getElementById('ca').getBoundingClientRect();
-  var screenCX = ap.x + el.w / 2 + caRect.left;
-  var screenCY = ap.y + el.h / 2 + caRect.top;
-  var sa = Math.atan2(e.clientY - screenCY, e.clientX - screenCX) * 180 / Math.PI;
-  var sr = el.rot || 0;
-  function mm(ev) {
-    var a = Math.atan2(ev.clientY - screenCY, ev.clientX - screenCX) * 180 / Math.PI;
-    var r = sr + (a - sa);
-    el.rot = ev.shiftKey ? Math.round(r / 15) * 15 : r;
+  var caRect=document.getElementById('ca').getBoundingClientRect();
+  var cx=el.x+el.w/2, cy=el.y+el.h/2;
+  var screenCX=cx+caRect.left;
+  var screenCY=cy+caRect.top;
+  var sa=Math.atan2(e.clientY-screenCY,e.clientX-screenCX)*180/Math.PI;
+  var sr=el.rot||0;
+
+  // Snapshot descendants: vector từ center parent đến center child
+  var descSnaps=getDescendants(el.id).map(function(c){
+    return{
+      el:c,
+      relX:(c.x+c.w/2)-cx,
+      relY:(c.y+c.h/2)-cy,
+      rot:c.rot||0
+    };
+  });
+
+  function mm(ev){
+    var a=Math.atan2(ev.clientY-screenCY,ev.clientX-screenCX)*180/Math.PI;
+    var newRot=sr+(a-sa);
+    if(ev.shiftKey)newRot=Math.round(newRot/15)*15;
+    var dRot=newRot-sr;
+    var dRad=dRot*Math.PI/180;
+    el.rot=newRot;
     renderEl(el);
     updInfo(el);
-    getDescendants(el.id).forEach(renderEl);
-    if (rulerOn) updateRuler(el);
-    var b = getRotatedBounds(el);
-    drawBoundingBox(b.x, b.y, b.w, b.h);
-    drawResizeGuides(b.x, b.y, b.w, b.h);
-    if (distGuideOn) drawDistanceGuides(b.x, b.y, b.w, b.h);
+
+    // Xoay children quanh center của parent
+    var cos=Math.cos(dRad),sin=Math.sin(dRad);
+    descSnaps.forEach(function(s){
+      var newRelX=s.relX*cos-s.relY*sin;
+      var newRelY=s.relX*sin+s.relY*cos;
+      s.el.x=cx+newRelX-s.el.w/2;
+      s.el.y=cy+newRelY-s.el.h/2;
+      s.el.rot=s.rot+dRot;
+      renderEl(s.el);
+    });
+
+    if(rulerOn)updateRuler(el);
+    var b=getRotatedBounds(el);
+    drawBoundingBox(b.x,b.y,b.w,b.h);
+    drawResizeGuides(b.x,b.y,b.w,b.h);
+    if(distGuideOn)drawDistanceGuides(b.x,b.y,b.w,b.h);
   }
-  function mu() {
+
+  function mu(){
     clearResizeGuides();
-    document.removeEventListener('mousemove', mm);
-    document.removeEventListener('mouseup', mu);
+    document.removeEventListener('mousemove',mm);
+    document.removeEventListener('mouseup',mu);
   }
-  document.addEventListener('mousemove', mm);
-  document.addEventListener('mouseup', mu);
+  document.addEventListener('mousemove',mm);
+  document.addEventListener('mouseup',mu);
 }
 
 function startWarpCorner(el,key,e){
@@ -421,37 +447,59 @@ function startWarpCtrl(el,key,e){
 function startDrag(el,e){
   if(selGroup.length>1&&selGroup.indexOf(el.id)>=0){startGroupDrag(e);return;}
   saveH();
-  var isKid=!!el.parentId,slx=el.x,sly=el.y,smx=e.clientX,smy=e.clientY,ox=e.clientX-el.x,oy=e.clientY-el.y;
+  var slx=el.x,sly=el.y,smx=e.clientX,smy=e.clientY;
+  var ox=e.clientX-el.x,oy=e.clientY-el.y;
+  var isKid=!!el.parentId;
+
+  // Snapshot vị trí ban đầu của tất cả descendants
+  var descSnaps=getDescendants(el.id).map(function(c){
+    return{el:c,x:c.x,y:c.y};
+  });
+
   var ov=document.getElementById('ruler-overlay');
   if(ov&&distGuideOn&&ov.style.display==='none')ov.style.display='block';
+
   function mm(ev){
+    // x,y là world coords → drag đơn giản cho cả parent lẫn child
     if(isKid){
-      var par=getEl(el.parentId);
-      var absRot=par?((getAbsPos(par).rot||0)*Math.PI/180):0;
-      var sdx=ev.clientX-smx, sdy=ev.clientY-smy;
-      el.x=slx + sdx*Math.cos(absRot) + sdy*Math.sin(absRot);
-      el.y=sly - sdx*Math.sin(absRot) + sdy*Math.cos(absRot);
+      el.x=slx+(ev.clientX-smx);
+      el.y=sly+(ev.clientY-smy);
     } else {
       el.x=Math.max(0,ev.clientX-ox);
       el.y=Math.max(0,ev.clientY-oy);
     }
-    snapGuides(el);renderEl(el);updInfo(el);updateRuler(el);
+
+    snapGuides(el);
+
+    // Tổng delta sau snap
+    var totalDx=el.x-slx;
+    var totalDy=el.y-sly;
+
+    // Kéo tất cả descendants theo
+    descSnaps.forEach(function(s){
+      s.el.x=s.x+totalDx;
+      s.el.y=s.y+totalDy;
+      renderEl(s.el);
+    });
+
+    renderEl(el);updInfo(el);updateRuler(el);
     var b=getRotatedBounds(el);
     drawDistanceGuides(b.x,b.y,b.w,b.h);
-    if(!isKid)getDescendants(el.id).forEach(renderEl);
   }
+
   function mu(ev){
     clearGuides();
     var ov=document.getElementById('ruler-overlay');
     if(ov)ov.querySelectorAll('.rul-dist').forEach(function(e){e.remove();});
     if(ov&&!rulerOn&&!distGuideOn)ov.style.display='none';
-    document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);
+    document.removeEventListener('mousemove',mm);
+    document.removeEventListener('mouseup',mu);
     if(ev.altKey){tryReparent(el);renderEl(el);}
     renderHier();
   }
-  document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
+  document.addEventListener('mousemove',mm);
+  document.addEventListener('mouseup',mu);
 }
-
 function updInfo(el){document.getElementById('cinfo').textContent=el.type+' · '+Math.round(el.x)+','+Math.round(el.y)+' · '+Math.round(el.w)+'×'+Math.round(el.h)+(el.rot?' · '+(el.rot||0).toFixed(1)+'°':'');}
 
 // §10 SELECTION
