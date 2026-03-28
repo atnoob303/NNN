@@ -201,11 +201,16 @@ function renderEl(el){
   if(inGroup)addTransformHandles(d,el);
   d.onmousedown=function(e){
     if(e.target.classList.contains('rh')||e.target.classList.contains('wh')||e.target.classList.contains('roth'))return;
-    e.stopPropagation();selEl(el.id,e.shiftKey);startDrag(el,e);
+    e.stopPropagation();
+    if(e.shiftKey){
+      selEl(el.id,true);
+      return;
+    }
+    selEl(el.id,false);
+    startDrag(el,e);
   };
-  d.onclick=function(e){e.stopPropagation();selEl(el.id,e.shiftKey);};
+  d.onclick=function(e){e.stopPropagation();};
 }
-
 // §7 WARP
 function initWarp(el){el.warp={tl:{x:0,y:0},tr:{x:0,y:0},br:{x:0,y:0},bl:{x:0,y:0},ctrlT:{x:0,y:0},ctrlR:{x:0,y:0},ctrlB:{x:0,y:0},ctrlL:{x:0,y:0}};}
 function applyWarp(d,el){
