@@ -295,20 +295,28 @@ function startWarpCtrl(el,key,e){
   document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
 }
 function startDrag(el,e){
-  // Multi-select: kéo cả nhóm
   if(selGroup.length>1&&selGroup.indexOf(el.id)>=0){
     startGroupDrag(e);return;
   }
   saveH();
   var isKid=!!el.parentId,slx=el.x,sly=el.y,smx=e.clientX,smy=e.clientY,ox=e.clientX-el.x,oy=e.clientY-el.y;
+  // Đảm bảo overlay visible nếu distGuideOn
+  var ov=document.getElementById('ruler-overlay');
+  if(ov&&distGuideOn&&ov.style.display==='none')ov.style.display='block';
   function mm(ev){
     if(isKid){el.x=slx+(ev.clientX-smx);el.y=sly+(ev.clientY-smy);}
     else{el.x=Math.max(0,ev.clientX-ox);el.y=Math.max(0,ev.clientY-oy);}
     snapGuides(el);renderEl(el);updInfo(el);updateRuler(el);
+    // Tia đỏ khi di chuyển
+    drawDistanceGuides(el.x,el.y,el.w,el.h);
     if(!isKid)getDescendants(el.id).forEach(renderEl);
   }
   function mu(ev){
     clearGuides();
+    // Xóa tia đỏ khi thả
+    var ov=document.getElementById('ruler-overlay');
+    if(ov)ov.querySelectorAll('.rul-dist').forEach(function(e){e.remove();});
+    if(ov&&!rulerOn&&!distGuideOn)ov.style.display='none';
     document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);
     if(ev.altKey){tryReparent(el);renderEl(el);}
     renderHier();
@@ -1236,11 +1244,12 @@ function toggleDistGuide(){
   distGuideOn=!distGuideOn;
   var btn=document.getElementById('btn-distguide');
   if(btn)btn.classList.toggle('active',distGuideOn);
-  if(!distGuideOn){
-    var ov=document.getElementById('ruler-overlay');
-    if(ov)ov.querySelectorAll('.rul-dist').forEach(function(e){e.remove();});
+  var ov=document.getElementById('ruler-overlay');
+  if(!distGuideOn&&ov){
+    ov.querySelectorAll('.rul-dist').forEach(function(e){e.remove();});
+    if(!rulerOn)ov.style.display='none';
   }
-  toast(distGuideOn?'📐 Dist Guide ON':'📐 Dist Guide OFF');
+  toast(distGuideOn?'📐 Dist ON':'📐 Dist OFF');
 }
 
 // Ruler đơn lẻ — tia xanh
@@ -1294,6 +1303,8 @@ function updateRulerGroup(bounds,grp){
 function drawBoundingBox(x,y,w,h){
   var ov=document.getElementById('ruler-overlay');
   if(!ov)return;
+  // Hiện overlay dù rulerOn=false
+  if(ov.style.display==='none')ov.style.display='block';
   ov.querySelectorAll('.rul-bbox').forEach(function(e){e.remove();});
   var color='#a16207';
   var lines=[
@@ -1318,7 +1329,9 @@ function drawBoundingBox(x,y,w,h){
 // Tia VÀNG — canh chỉnh khi resize
 function drawResizeGuides(el){
   var ov=document.getElementById('ruler-overlay');
-  if(!ov||!rulerOn)return;
+  if(!ov)return;
+  // Hiện overlay dù rulerOn=false
+  if(ov.style.display==='none')ov.style.display='block';
   ov.querySelectorAll('.rul-resize').forEach(function(e){e.remove();});
   var x=Math.round(el.x),y=Math.round(el.y),w=Math.round(el.w),h=Math.round(el.h);
   var color='#fbbf24';
@@ -1354,46 +1367,47 @@ function drawDistanceGuides(x,y,w,h){
   if(!distGuideOn)return;
   var ov=document.getElementById('ruler-overlay');
   if(!ov)return;
+  if(ov.style.display==='none')ov.style.display='block';
   ov.querySelectorAll('.rul-dist').forEach(function(e){e.remove();});
+
+  var OVERFLOW=10;
   var opacities=[0.75,0.55,0.38,0.22];
-  var OVERFLOW=10; // px nhô ra mỗi đầu
 
-  DIST_INTERVALS.forEach(function(dist,i){
-    var op=opacities[i];
-    var color='rgba(239,68,68,'+op+')';
+  // Vẽ tia đỏ trên TỪNG element khác
+  els.forEach(function(o){
+    if(selGroup.indexOf(o.id)>=0)return;
+    var ap=getAbsPos(o);
+    var ox=Math.round(ap.x),oy=Math.round(ap.y),ow=Math.round(o.w),oh=Math.round(o.h);
 
-    // Tia NGANG trên/dưới — dài = w + OVERFLOW*2, nhô ra 2 đầu
-    [y-dist, y+h+dist].forEach(function(ty){
-      var d=document.createElement('div');
-      d.className='rul-dist';
-      d.style.cssText=[
-        'position:absolute',
-        'pointer-events:none',
-        'z-index:708',
-        'left:'+(x-OVERFLOW)+'px',
-        'top:'+ty+'px',
-        'width:'+(w+OVERFLOW*2)+'px',
-        'height:0',
-        'border-top:1px dashed '+color
-      ].join(';');
-      ov.appendChild(d);
-    });
+    DIST_INTERVALS.forEach(function(dist,i){
+      var op=opacities[i];
+      var color='rgba(239,68,68,'+op+')';
 
-    // Tia DỌC trái/phải — cao = h + OVERFLOW*2, nhô ra 2 đầu
-    [x-dist, x+w+dist].forEach(function(lx){
-      var d=document.createElement('div');
-      d.className='rul-dist';
-      d.style.cssText=[
-        'position:absolute',
-        'pointer-events:none',
-        'z-index:708',
-        'left:'+lx+'px',
-        'top:'+(y-OVERFLOW)+'px',
-        'width:0',
-        'height:'+(h+OVERFLOW*2)+'px',
-        'border-left:1px dashed '+color
-      ].join(';');
-      ov.appendChild(d);
+      // Tia NGANG trên/dưới element khác
+      [oy-dist, oy+oh+dist].forEach(function(ty){
+        var d=document.createElement('div');
+        d.className='rul-dist';
+        d.style.cssText=[
+          'position:absolute','pointer-events:none','z-index:708',
+          'left:'+(ox-OVERFLOW)+'px','top:'+ty+'px',
+          'width:'+(ow+OVERFLOW*2)+'px','height:0',
+          'border-top:1px dashed '+color
+        ].join(';');
+        ov.appendChild(d);
+      });
+
+      // Tia DỌC trái/phải element khác
+      [ox-dist, ox+ow+dist].forEach(function(lx){
+        var d=document.createElement('div');
+        d.className='rul-dist';
+        d.style.cssText=[
+          'position:absolute','pointer-events:none','z-index:708',
+          'left:'+lx+'px','top:'+(oy-OVERFLOW)+'px',
+          'width:0','height:'+(oh+OVERFLOW*2)+'px',
+          'border-left:1px dashed '+color
+        ].join(';');
+        ov.appendChild(d);
+      });
     });
   });
 }
@@ -1403,6 +1417,10 @@ function clearResizeGuides(){
   var ov=document.getElementById('ruler-overlay');
   if(!ov)return;
   ov.querySelectorAll('.rul-bbox,.rul-resize,.rul-dist').forEach(function(e){e.remove();});
+  // Ẩn overlay nếu Ruler OFF và Dist OFF
+  if(!rulerOn&&!distGuideOn)ov.style.display='none';
+  // Nếu Ruler ON thì giữ hiện để ruler lines còn đó
+  else if(rulerOn)ov.style.display='block';
 }
 
 // §21 SMART GUIDES
