@@ -25,7 +25,7 @@ var els=[],sel=null,selGroup=[],tool='sel',idc=0,hist=[],dtool=null,etab='lua';
 var rulerOn=false;
 var tMode=0,TMODES=['Scale','Move','Rotate','All','Warp'],TICONS=['⤢','✥','↻','⊕','⌀'];
 var hierDrag=null;
-var VERSION='Alpha 0.0.6.10';
+var VERSION='Alpha 0.0.6.11';
 var distGuideOn=true; // tia đỏ khoảng cách, mặc định bật
 
 var DEFS={
@@ -261,8 +261,6 @@ function startScaleHandle(el, pos, e) {
   var sx = e.clientX, sy = e.clientY;
   var ox = el.x, oy = el.y, ow = el.w, oh = el.h;
 
-  // Snapshot absolute position của tất cả con
-  // để giữ cố định khi cha resize
   var childSnaps = getDescendants(el.id).map(function(c) {
     var abs = getAbsPos(c);
     return { el: c, ax: abs.x, ay: abs.y };
@@ -287,7 +285,6 @@ function startScaleHandle(el, pos, e) {
 
     el.w = nw; el.h = nh; el.x = nx; el.y = ny;
 
-    // ── Fix Bug 3+4: giữ absolute position của frame con cố định ──
     childSnaps.forEach(function(s) {
       var c = s.el;
       var par = getEl(c.parentId);
@@ -295,10 +292,8 @@ function startScaleHandle(el, pos, e) {
       var pa = getAbsPos(par);
       var pcx = pa.x + par.w / 2, pcy = pa.y + par.h / 2;
       var pr = (pa.rot || 0) * Math.PI / 180;
-      // Tính lại relative từ absolute cũ
       var relX = s.ax + c.w / 2 - pcx;
       var relY = s.ay + c.h / 2 - pcy;
-      // Rotate ngược lại
       var cos = Math.cos(-pr), sin = Math.sin(-pr);
       c.x = relX * cos - relY * sin;
       c.y = relX * sin + relY * cos;
@@ -309,9 +304,12 @@ function startScaleHandle(el, pos, e) {
     renderProps();
     updInfo(el);
     updateRuler(el);
-    drawResizeGuides(el);
-    drawBoundingBox(el.x, el.y, el.w, el.h);
-    drawDistanceGuides(el.x, el.y, el.w, el.h);
+
+    // FIX: dùng AABB (rotated bounds) thay vì el.x/y thô
+    var b = getRotatedBounds(el);
+    drawResizeGuides(b.x, b.y, b.w, b.h);
+    drawBoundingBox(b.x, b.y, b.w, b.h);
+    drawDistanceGuides(b.x, b.y, b.w, b.h);
   }
 
   function mu() {
@@ -323,12 +321,44 @@ function startScaleHandle(el, pos, e) {
   document.addEventListener('mousemove', mm);
   document.addEventListener('mouseup', mu);
 }
-function startRotate(el,e){
-  saveH();var d=document.getElementById(el.id),rc=d.getBoundingClientRect();
-  var cx=rc.left+rc.width/2,cy=rc.top+rc.height/2,sa=Math.atan2(e.clientY-cy,e.clientX-cx)*180/Math.PI,sr=el.rot||0;
-  function mm(ev){var a=Math.atan2(ev.clientY-cy,ev.clientX-cx)*180/Math.PI,r=sr+(a-sa);el.rot=ev.shiftKey?Math.round(r/15)*15:r;renderEl(el);updInfo(el);getDescendants(el.id).forEach(renderEl);}
-  function mu(){document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);}
-  document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
+function startRotate(el, e) {
+  saveH();
+
+  // FIX: tính tâm xoay từ canvas coords thay vì getBoundingClientRect()
+  var ap = getAbsPos(el);
+  var caRect = document.getElementById('ca').getBoundingClientRect();
+  var screenCX = ap.x + el.w / 2 + caRect.left;
+  var screenCY = ap.y + el.h / 2 + caRect.top;
+
+  var sa = Math.atan2(e.clientY - screenCY, e.clientX - screenCX) * 180 / Math.PI;
+  var sr = el.rot || 0;
+
+  function mm(ev) {
+    var a = Math.atan2(ev.clientY - screenCY, ev.clientX - screenCX) * 180 / Math.PI;
+    var r = sr + (a - sa);
+    el.rot = ev.shiftKey ? Math.round(r / 15) * 15 : r;
+
+    renderEl(el);
+    updInfo(el);
+    getDescendants(el.id).forEach(renderEl);
+
+    // FIX: update tất cả guides khi đang xoay
+    if (rulerOn) updateRuler(el);
+    var b = getRotatedBounds(el);
+    drawBoundingBox(b.x, b.y, b.w, b.h);
+    drawResizeGuides(b.x, b.y, b.w, b.h);
+    if (distGuideOn) drawDistanceGuides(b.x, b.y, b.w, b.h);
+  }
+
+  function mu() {
+    // FIX: xóa guides khi thả chuột
+    clearResizeGuides();
+    document.removeEventListener('mousemove', mm);
+    document.removeEventListener('mouseup', mu);
+  }
+
+  document.addEventListener('mousemove', mm);
+  document.addEventListener('mouseup', mu);
 }
 function startWarpCorner(el,key,e){
   saveH();if(!el.warp)initWarp(el);var sx=e.clientX,sy=e.clientY,ox=el.warp[key].x,oy=el.warp[key].y;
@@ -356,7 +386,9 @@ function startDrag(el,e){
     else{el.x=Math.max(0,ev.clientX-ox);el.y=Math.max(0,ev.clientY-oy);}
     snapGuides(el);renderEl(el);updInfo(el);updateRuler(el);
     // Tia đỏ khi di chuyển
-    drawDistanceGuides(el.x,el.y,el.w,el.h);
+    // FIX: dùng AABB khi drag để tia đỏ đúng với element đang xoay
+    var b = getRotatedBounds(el);
+    drawDistanceGuides(b.x, b.y, b.w, b.h);
     if(!isKid)getDescendants(el.id).forEach(renderEl);
   }
   function mu(ev){
