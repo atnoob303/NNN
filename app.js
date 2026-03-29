@@ -29,7 +29,7 @@ var els=[],sel=null,selGroup=[],tool='sel',idc=0,hist=[],dtool=null,etab='lua';
 var rulerOn=false;
 var tMode=0,TMODES=['Scale','Move','Rotate','All','Warp'],TICONS=['⤢','✥','↻','⊕','⌀'];
 var hierDrag=null;
-var VERSION='Alpha 0.0.6.16.5';
+var VERSION='Alpha 0.0.6.17';
 var distGuideOn=true;
 
 var FONTS=['GothamMedium','GothamBold','Gotham','Arial','ArialBold','Legacy','Highway','SciFi','Antique','Cartoon','Code','Fantasy','Garamond','Arcade','Ubuntu','Merriweather','Oswald','Nunito','Bangers','Creepster'];
@@ -443,6 +443,7 @@ function startScaleHandle(el, pos, e){
 
   function mu(){
     clearResizeGuides();
+    if(sel) updateRuler(getEl(sel));
     document.removeEventListener('mousemove',mm);
     document.removeEventListener('mouseup',mu);
   }
@@ -514,8 +515,8 @@ function startDrag(el,e){
 
     renderEl(el); updInfo(el); updateRuler(el);
     var b=getRotatedBounds(el);
-    drawResizeGuides(b.x,b.y,b.w,b.h); // ← FIX: update XYWH liên tục khi drag
     drawDistanceGuides(b.x,b.y,b.w,b.h);
+    renderProps();
   }
 
   function mu(ev){
@@ -551,6 +552,7 @@ function startRotate(el,e){
     renderEl(el);
     getDescendants(el.id).forEach(renderEl);
     updInfo(el);
+    renderProps(); // ← THÊM DÒNG NÀY
 
     if(rulerOn) updateRuler(el);
     var b=getRotatedBounds(el);
@@ -561,6 +563,7 @@ function startRotate(el,e){
 
   function mu(){
     clearResizeGuides();
+    if(sel) updateRuler(getEl(sel));
     document.removeEventListener('mousemove',mm);
     document.removeEventListener('mouseup',mu);
   }
@@ -731,6 +734,12 @@ function calcGroupBounds(){
 // ───────────────────────────────────────────────────────────────
 
 function selEl(id,shift){
+  clearResizeGuides();
+  clearGuides();
+ if(!id){ // ← THÊM: xóa ruler khi bỏ chọn
+    var ov=document.getElementById('ruler-overlay');
+    if(ov) ov.querySelectorAll('.rul-single').forEach(function(e){e.remove();});
+  }
   if(shift&&id){
     if(selGroup.indexOf(id)<0)selGroup.push(id);
     else selGroup=selGroup.filter(function(x){return x!==id;});
@@ -751,6 +760,13 @@ function selEl(id,shift){
   updateAlignBar();
   renderProps();renderHier();
   renderGroupBox();
+ // ← THÊM: vẽ tia cho element mới được chọn
+  if(id&&selGroup.length===1){
+    var el=getEl(id);
+    if(el){
+      updateRuler(el); // ← THÊM: vẽ tia xanh ruler
+    }
+  }
 }
 
 // ───────────────────────────────────────────────────────────────
@@ -798,7 +814,6 @@ ca.onmousedown=function(e){
   if(t!==ca&&t!==document.getElementById('cv')&&!t.classList.contains('gridbg')&&!(tool==='drw'))return;
   if(tool==='drw'){
     var r=ca.getBoundingClientRect(),ds={x:e.clientX-r.left,y:e.clientY-r.top};
-    // §11-FIX BUG2: dùng mkElFromPixel thay vì mkEl(type,x,y,w,h)
     var el=mkElFromPixel(dtool||'Frame',ds.x,ds.y,10,10);
     saveH();els.push(el);renderEl(el);selEl(el.id);hint();
     window._drawingEl=el;
@@ -806,11 +821,10 @@ ca.onmousedown=function(e){
       var nx=ev.clientX-r.left,ny=ev.clientY-r.top;
       var rw=Math.abs(nx-ds.x)||10,rh=Math.abs(ny-ds.y)||10;
       if(ev.shiftKey){var s=Math.max(rw,rh);rw=s;rh=s;}
-      // §11-FIX BUG2: encodeUDim2 thay vì el.x/y/w/h trực tiếp
       encodeUDim2(el, Math.min(ds.x,nx), Math.min(ds.y,ny), rw, rh);
       renderEl(el);updInfo(el);
-      // §11-FIX BUG2: dùng getElRect để lấy ecx/ecy
       var _er=getElRect(el);
+      drawResizeGuides(_er.x,_er.y,_er.w,_er.h); // ← THÊM
       drawBoundingBox(_er.x,_er.y,_er.w,_er.h);
       drawDistanceGuides(_er.x,_er.y,_er.w,_er.h);
       var ecx=_er.x+_er.w/2,ecy=_er.y+_er.h/2,best=null,bestA=Infinity;
@@ -952,6 +966,10 @@ function dupSel(){
 }
 function delSel() {
   if (!sel) return;
+  clearResizeGuides();
+  clearGuides();
+  var ov=document.getElementById('ruler-overlay');
+  if(ov) ov.querySelectorAll('.rul-single').forEach(function(e){e.remove();});
   saveH();
   var toDelete = [];
   selGroup.forEach(function(id) {
@@ -1725,6 +1743,10 @@ function toggleRuler(){
   if(ov)ov.style.display=rulerOn?'block':'none';
   if(!rulerOn&&ov)ov.innerHTML='';
   toast(rulerOn?'📏 Ruler ON':'📏 Ruler OFF');
+  if(rulerOn&&sel){
+    var el=getEl(sel);
+    if(el) updateRuler(el);
+  }
 }
 function toggleDistGuide(){
   distGuideOn=!distGuideOn;
@@ -1885,7 +1907,7 @@ function _makeDistLabel(ov, x, y, text, color) {
 function clearResizeGuides(){
   var ov=document.getElementById('ruler-overlay');
   if(!ov)return;
-  ov.querySelectorAll('.rul-bbox,.rul-resize,.rul-dist').forEach(function(e){e.remove();});
+  ov.querySelectorAll('.rul-bbox,.rul-resize,.rul-dist,.rul-single').forEach(function(e){e.remove()});
   if(!rulerOn&&!distGuideOn)ov.style.display='none';
   else if(rulerOn)ov.style.display='block';
 }
