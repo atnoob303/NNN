@@ -29,7 +29,7 @@ var els=[],sel=null,selGroup=[],tool='sel',idc=0,hist=[],dtool=null,etab='lua';
 var rulerOn=false;
 var tMode=0,TMODES=['Scale','Move','Rotate','All','Warp'],TICONS=['⤢','✥','↻','⊕','⌀'];
 var hierDrag=null;
-var VERSION='Alpha 0.0.6.16';
+var VERSION='Alpha 0.0.6.16.2';
 var distGuideOn=true;
 
 var FONTS=['GothamMedium','GothamBold','Gotham','Arial','ArialBold','Legacy','Highway','SciFi','Antique','Cartoon','Code','Fantasy','Garamond','Arcade','Ubuntu','Merriweather','Oswald','Nunito','Bangers','Creepster'];
@@ -536,36 +536,23 @@ function startRotate(el, e){
   var sa = Math.atan2(e.clientY-screenCY, e.clientX-screenCX)*180/Math.PI;
   var sr = el.rot||0;
 
-  var descSnaps = getDescendants(el.id).map(function(c){
-    var cr=getElRect(c);
-    return{ el:c, relX:(cr.x+cr.w/2)-cx, relY:(cr.y+cr.h/2)-cy, rot:c.rot||0, ww:cr.w, wh:cr.h };
-  });
+  // ── BỎ HOÀN TOÀN descSnaps ──
+  // Không cần snapshot con, không cần re-encode con
 
   function mm(ev){
     var a = Math.atan2(ev.clientY-screenCY, ev.clientX-screenCX)*180/Math.PI;
     var newRot = sr+(a-sa);
-    if(ev.shiftKey) newRot=Math.round(newRot/15)*15;
-    var dRot = newRot-sr;
-    var dRad = dRot*Math.PI/180;
-    el.rot = newRot;
-    renderEl(el); updInfo(el);
-
-    var cos=Math.cos(dRad), sin=Math.sin(dRad);
-    descSnaps.forEach(function(s){
-      var newRelX=s.relX*cos-s.relY*sin;
-      var newRelY=s.relX*sin+s.relY*cos;
-      var newCX=cx+newRelX, newCY=cy+newRelY;
-      var newX=newCX-s.ww/2, newY=newCY-s.wh/2;
-      var savedRot=s.el.rot;
-      s.el.rot=0;
-      encodeUDim2(s.el, newX, newY, s.ww, s.wh);
-      s.el.rot = savedRot+dRot;
-      renderEl(s.el);
-    });
+    if(ev.shiftKey) newRot = Math.round(newRot/15)*15;
+    
+    el.rot = newRot; // chỉ cần đổi rot của cha
+    renderEl(el);
+    getDescendants(el.id).forEach(renderEl); // con tự re-render đúng vì getElRect dùng pRot
+    updInfo(el);
 
     if(rulerOn) updateRuler(el);
-    var b=getRotatedBounds(el);
-    drawBoundingBox(b.x,b.y,b.w,b.h); drawResizeGuides(b.x,b.y,b.w,b.h);
+    var b = getRotatedBounds(el);
+    drawBoundingBox(b.x,b.y,b.w,b.h);
+    drawResizeGuides(b.x,b.y,b.w,b.h);
     if(distGuideOn) drawDistanceGuides(b.x,b.y,b.w,b.h);
   }
 
