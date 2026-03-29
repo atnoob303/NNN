@@ -29,7 +29,7 @@ var els=[],sel=null,selGroup=[],tool='sel',idc=0,hist=[],dtool=null,etab='lua';
 var rulerOn=false;
 var tMode=0,TMODES=['Scale','Move','Rotate','All','Warp'],TICONS=['⤢','✥','↻','⊕','⌀'];
 var hierDrag=null;
-var VERSION='Alpha 0.0.6.16.2';
+var VERSION='Alpha 0.0.6.16.5';
 var distGuideOn=true;
 
 var FONTS=['GothamMedium','GothamBold','Gotham','Arial','ArialBold','Legacy','Highway','SciFi','Antique','Cartoon','Code','Fantasy','Garamond','Arcade','Ubuntu','Merriweather','Oswald','Nunito','Bangers','Creepster'];
@@ -383,33 +383,26 @@ function addWarpHandles(d,el){
 // ───────────────────────────────────────────────────────────────
 // §9  DRAG & SCALE & ROTATE — encode UDim2 sau mỗi thao tác
 // ───────────────────────────────────────────────────────────────
- 
-// §9 DRAG & SCALE & ROTATE
 
 function startScaleHandle(el, pos, e){
   saveH();
   var sx=e.clientX, sy=e.clientY;
-  var r0 = getElRect(el);
+  var r0=getElRect(el);
   var ox0=r0.x, oy0=r0.y, ow0=r0.w, oh0=r0.h;
-  var rotRad = r0.rot * Math.PI/180;
+  var rotRad=r0.rot*Math.PI/180;
 
-  var fixMap = {
+  var fixMap={
     tl:{lx:ow0/2,ly:oh0/2}, tc:{lx:0,ly:oh0/2}, tr:{lx:-ow0/2,ly:oh0/2},
     ml:{lx:ow0/2,ly:0},                           mr:{lx:-ow0/2,ly:0},
-    bl:{lx:ow0/2,ly:-oh0/2}, bc:{lx:0,ly:-oh0/2},br:{lx:-ow0/2,ly:-oh0/2}
+    bl:{lx:ow0/2,ly:-oh0/2},bc:{lx:0,ly:-oh0/2}, br:{lx:-ow0/2,ly:-oh0/2}
   };
-  var fix = fixMap[pos]||{lx:0,ly:0};
-  var startCX = ox0+ow0/2, startCY = oy0+oh0/2;
-
-  var descSnaps = getDescendants(el.id).map(function(c){
-    return{ el:c, psX:c.psX, poX:c.poX, psY:c.psY, poY:c.poY,
-            ssW:c.ssW, soW:c.soW, ssH:c.ssH, soH:c.soH };
-  });
+  var fix=fixMap[pos]||{lx:0,ly:0};
+  var startCX=ox0+ow0/2, startCY=oy0+oh0/2;
 
   function mm(ev){
     var dx=ev.clientX-sx, dy=ev.clientY-sy;
-    var lx =  dx*Math.cos(rotRad) + dy*Math.sin(rotRad);
-    var ly = -dx*Math.sin(rotRad) + dy*Math.cos(rotRad);
+    var lx= dx*Math.cos(rotRad)+dy*Math.sin(rotRad);
+    var ly=-dx*Math.sin(rotRad)+dy*Math.cos(rotRad);
 
     var nw=ow0, nh=oh0;
     if(pos==='tr'||pos==='mr'||pos==='br') nw=Math.max(20,ow0+lx);
@@ -424,27 +417,28 @@ function startScaleHandle(el, pos, e){
       nw=Math.max(20,nw); nh=Math.max(20,nh);
     }
 
-    var sfx = fix.lx*(nw/ow0), sfy = fix.ly*(nh/oh0);
-    var ofx = fix.lx, ofy = fix.ly;
-    var newFixWX = startCX + sfx*Math.cos(rotRad) - sfy*Math.sin(rotRad);
-    var newFixWY = startCY + sfx*Math.sin(rotRad) + sfy*Math.cos(rotRad);
-    var oldFixWX = startCX + ofx*Math.cos(rotRad) - ofy*Math.sin(rotRad);
-    var oldFixWY = startCY + ofx*Math.sin(rotRad) + ofy*Math.cos(rotRad);
-    var newCX = startCX + (oldFixWX-newFixWX);
-    var newCY = startCY + (oldFixWY-newFixWY);
-    var newX = newCX - nw/2, newY = newCY - nh/2;
+    var sfx=fix.lx*(nw/ow0), sfy=fix.ly*(nh/oh0);
+    var ofx=fix.lx, ofy=fix.ly;
+    var newFixWX=startCX+sfx*Math.cos(rotRad)-sfy*Math.sin(rotRad);
+    var newFixWY=startCY+sfx*Math.sin(rotRad)+sfy*Math.cos(rotRad);
+    var oldFixWX=startCX+ofx*Math.cos(rotRad)-ofy*Math.sin(rotRad);
+    var oldFixWY=startCY+ofx*Math.sin(rotRad)+ofy*Math.cos(rotRad);
+    var newCX=startCX+(oldFixWX-newFixWX);
+    var newCY=startCY+(oldFixWY-newFixWY);
+    var newX=newCX-nw/2, newY=newCY-nh/2;
 
-    var savedRot = el.rot;
-    el.rot = 0;
-    encodeUDim2(el, newX, newY, nw, nh);
-    el.rot = savedRot;
+    var savedRot=el.rot; el.rot=0;
+    encodeUDim2(el,newX,newY,nw,nh);
+    el.rot=savedRot;
 
     renderEl(el);
     getDescendants(el.id).forEach(renderEl);
     renderProps(); updInfo(el);
     var b=getRotatedBounds(el);
-    updateRuler(el); drawResizeGuides(b.x,b.y,b.w,b.h);
-    drawBoundingBox(b.x,b.y,b.w,b.h); drawDistanceGuides(b.x,b.y,b.w,b.h);
+    updateRuler(el);
+    drawResizeGuides(b.x,b.y,b.w,b.h);
+    drawBoundingBox(b.x,b.y,b.w,b.h);
+    drawDistanceGuides(b.x,b.y,b.w,b.h);
   }
 
   function mu(){
@@ -456,31 +450,42 @@ function startScaleHandle(el, pos, e){
   document.addEventListener('mouseup',mu);
 }
 
+// ─────────────────────────────────────────────
 function startWarpCorner(el,key,e){
   saveH(); if(!el.warp)initWarp(el);
   var sx=e.clientX, sy=e.clientY, ox=el.warp[key].x, oy=el.warp[key].y;
-  function mm(ev){el.warp[key].x=ox+(ev.clientX-sx); el.warp[key].y=oy+(ev.clientY-sy); var d=document.getElementById(el.id); if(d)applyWarp(d,el); renderEl(el);}
-  function mu(){document.removeEventListener('mousemove',mm); document.removeEventListener('mouseup',mu);}
-  document.addEventListener('mousemove',mm); document.addEventListener('mouseup',mu);
+  function mm(ev){
+    el.warp[key].x=ox+(ev.clientX-sx);
+    el.warp[key].y=oy+(ev.clientY-sy);
+    var d=document.getElementById(el.id); if(d)applyWarp(d,el);
+    renderEl(el);
+  }
+  function mu(){document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);}
+  document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
 }
 
 function startWarpCtrl(el,key,e){
   saveH(); if(!el.warp)initWarp(el);
   var sx=e.clientX, sy=e.clientY, ox=el.warp[key].x, oy=el.warp[key].y;
-  function mm(ev){el.warp[key].x=ox+(ev.clientX-sx); el.warp[key].y=oy+(ev.clientY-sy); renderEl(el);}
-  function mu(){document.removeEventListener('mousemove',mm); document.removeEventListener('mouseup',mu);}
-  document.addEventListener('mousemove',mm); document.addEventListener('mouseup',mu);
+  function mm(ev){
+    el.warp[key].x=ox+(ev.clientX-sx);
+    el.warp[key].y=oy+(ev.clientY-sy);
+    renderEl(el);
+  }
+  function mu(){document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);}
+  document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
 }
 
-function startDrag(el, e){
-  if(selGroup.length>1 && selGroup.indexOf(el.id)>=0){startGroupDrag(e); return;}
+// ─────────────────────────────────────────────
+function startDrag(el,e){
+  if(selGroup.length>1&&selGroup.indexOf(el.id)>=0){startGroupDrag(e);return;}
   saveH();
-  var r0 = getElRect(el);
+  var r0=getElRect(el);
   var smx=e.clientX, smy=e.clientY;
   var startWX=r0.x, startWY=r0.y;
 
-  var descSnaps = getDescendants(el.id).map(function(c){
-    var cr=getElRect(c); return{el:c, wx:cr.x, wy:cr.y, ww:cr.w, wh:cr.h};
+  var descSnaps=getDescendants(el.id).map(function(c){
+    var cr=getElRect(c); return{el:c,wx:cr.x,wy:cr.y,ww:cr.w,wh:cr.h};
   });
 
   var ov=document.getElementById('ruler-overlay');
@@ -488,28 +493,28 @@ function startDrag(el, e){
 
   function mm(ev){
     var dx=ev.clientX-smx, dy=ev.clientY-smy;
-    var newWX = startWX+dx, newWY = startWY+dy;
+    var newWX=startWX+dx, newWY=startWY+dy;
 
-    var tmp = {x:newWX, y:newWY, w:r0.w, h:r0.h, id:el.id, parentId:el.parentId};
+    var tmp={x:newWX,y:newWY,w:r0.w,h:r0.h,id:el.id,parentId:el.parentId};
     snapGuides(tmp);
     newWX=tmp.x; newWY=tmp.y;
 
-    var savedRot = el.rot;
-    el.rot = 0;
-    encodeUDim2(el, newWX, newWY, r0.w, r0.h);
-    el.rot = savedRot;
+    var savedRot=el.rot; el.rot=0;
+    encodeUDim2(el,newWX,newWY,r0.w,r0.h);
+    el.rot=savedRot;
 
-    var actualDX = newWX - startWX, actualDY = newWY - startWY;
+    var actualDX=newWX-startWX, actualDY=newWY-startWY;
     descSnaps.forEach(function(s){
       var newX=s.wx+actualDX, newY=s.wy+actualDY;
       var savedRot2=s.el.rot; s.el.rot=0;
-      encodeUDim2(s.el, newX, newY, s.ww, s.wh);
+      encodeUDim2(s.el,newX,newY,s.ww,s.wh);
       s.el.rot=savedRot2;
       renderEl(s.el);
     });
 
     renderEl(el); updInfo(el); updateRuler(el);
     var b=getRotatedBounds(el);
+    drawResizeGuides(b.x,b.y,b.w,b.h); // ← FIX: update XYWH liên tục khi drag
     drawDistanceGuides(b.x,b.y,b.w,b.h);
   }
 
@@ -520,37 +525,35 @@ function startDrag(el, e){
     if(ov&&!rulerOn&&!distGuideOn) ov.style.display='none';
     document.removeEventListener('mousemove',mm);
     document.removeEventListener('mouseup',mu);
-    if(ev.altKey){tryReparent(el); renderEl(el);}
+    if(ev.altKey){tryReparent(el);renderEl(el);}
     renderHier();
   }
   document.addEventListener('mousemove',mm);
   document.addEventListener('mouseup',mu);
 }
 
-function startRotate(el, e){
+// ─────────────────────────────────────────────
+function startRotate(el,e){
   saveH();
-  var caRect = document.getElementById('ca').getBoundingClientRect();
-  var r0 = getElRect(el);
+  var caRect=document.getElementById('ca').getBoundingClientRect();
+  var r0=getElRect(el);
   var cx=r0.x+r0.w/2, cy=r0.y+r0.h/2;
   var screenCX=cx+caRect.left, screenCY=cy+caRect.top;
-  var sa = Math.atan2(e.clientY-screenCY, e.clientX-screenCX)*180/Math.PI;
-  var sr = el.rot||0;
-
-  // ── BỎ HOÀN TOÀN descSnaps ──
-  // Không cần snapshot con, không cần re-encode con
+  var sa=Math.atan2(e.clientY-screenCY,e.clientX-screenCX)*180/Math.PI;
+  var sr=el.rot||0;
 
   function mm(ev){
-    var a = Math.atan2(ev.clientY-screenCY, ev.clientX-screenCX)*180/Math.PI;
-    var newRot = sr+(a-sa);
-    if(ev.shiftKey) newRot = Math.round(newRot/15)*15;
-    
-    el.rot = newRot; // chỉ cần đổi rot của cha
+    var a=Math.atan2(ev.clientY-screenCY,ev.clientX-screenCX)*180/Math.PI;
+    var newRot=sr+(a-sa);
+    if(ev.shiftKey) newRot=Math.round(newRot/15)*15;
+
+    el.rot=newRot;
     renderEl(el);
-    getDescendants(el.id).forEach(renderEl); // con tự re-render đúng vì getElRect dùng pRot
+    getDescendants(el.id).forEach(renderEl);
     updInfo(el);
 
     if(rulerOn) updateRuler(el);
-    var b = getRotatedBounds(el);
+    var b=getRotatedBounds(el);
     drawBoundingBox(b.x,b.y,b.w,b.h);
     drawResizeGuides(b.x,b.y,b.w,b.h);
     if(distGuideOn) drawDistanceGuides(b.x,b.y,b.w,b.h);
@@ -565,177 +568,71 @@ function startRotate(el, e){
   document.addEventListener('mouseup',mu);
 }
 
+// ─────────────────────────────────────────────
 function updInfo(el){
   var r=getElRect(el);
-  document.getElementById('cinfo').textContent =
-    el.type+' · '+Math.round(r.x)+','+Math.round(r.y)+' · '+Math.round(r.w)+'×'+Math.round(r.h)+(el.rot?' · '+(el.rot||0).toFixed(1)+'°':'');
-}
-
-// §9c GROUP TRANSFORM
-function startGroupDrag(e){
-  saveH();
-  var grp = selGroup.map(getEl).filter(Boolean);
-  var snaps = grp.map(function(el){
-    var r=getElRect(el); return{el:el,wx:r.x,wy:r.y,ww:r.w,wh:r.h};
-  });
-  var smx=e.clientX, smy=e.clientY;
-
-  function mm(ev){
-    var dx=ev.clientX-smx, dy=ev.clientY-smy;
-    var tempRects = snaps.map(function(s){ return{x:s.wx+dx,y:s.wy+dy,w:s.ww,h:s.wh}; });
-    var mnx=Math.min.apply(null,tempRects.map(function(r){return r.x;}));
-    var mny=Math.min.apply(null,tempRects.map(function(r){return r.y;}));
-    var mxx=Math.max.apply(null,tempRects.map(function(r){return r.x+r.w;}));
-    var mxy=Math.max.apply(null,tempRects.map(function(r){return r.y+r.h;}));
-    var snapOff = snapGuidesGroup({x:mnx,y:mny,w:mxx-mnx,h:mxy-mny});
-    dx+=snapOff.dx; dy+=snapOff.dy;
-
-    snaps.forEach(function(s){
-      var newX=s.wx+dx, newY=s.wy+dy;
-      var savedRot=s.el.rot; s.el.rot=0;
-      encodeUDim2(s.el, newX, newY, s.ww, s.wh);
-      s.el.rot=savedRot;
-      renderEl(s.el);
-      getDescendants(s.el.id).forEach(renderEl);
-    });
-    renderGroupBox();
-    var b=calcGroupBounds();
-    if(b){
-      document.getElementById('cinfo').textContent='Group · '+Math.round(b.x)+','+Math.round(b.y)+' · '+Math.round(b.w)+'×'+Math.round(b.h);
-      updateRulerGroup(b,grp);
-    }
-  }
-  function mu(){
-    clearGuides();
-    document.removeEventListener('mousemove',mm);
-    document.removeEventListener('mouseup',mu);
-    renderHier();
-  }
-  document.addEventListener('mousemove',mm);
-  document.addEventListener('mouseup',mu);
-}
-
-function startGroupScale(pos,e){
-  saveH();
-  var b0=calcGroupBounds(); if(!b0)return;
-  var grp=selGroup.map(getEl).filter(Boolean);
-  var snaps=grp.map(function(el){
-    var r=getElRect(el);
-    return{el:el, rx:(r.x-b0.x)/b0.w, ry:(r.y-b0.y)/b0.h, rw:r.w/b0.w, rh:r.h/b0.h};
-  });
-  var sx=e.clientX, sy=e.clientY;
-
-  function mm(ev){
-    var dx=ev.clientX-sx, dy=ev.clientY-sy;
-    var nb={x:b0.x,y:b0.y,w:b0.w,h:b0.h};
-    if(pos==='tr'||pos==='mr'||pos==='br') nb.w=Math.max(40,b0.w+dx);
-    if(pos==='tl'||pos==='ml'||pos==='bl'){nb.w=Math.max(40,b0.w-dx);nb.x=b0.x+b0.w-nb.w;}
-    if(pos==='bl'||pos==='bc'||pos==='br') nb.h=Math.max(40,b0.h+dy);
-    if(pos==='tl'||pos==='tc'||pos==='tr'){nb.h=Math.max(40,b0.h-dy);nb.y=b0.y+b0.h-nb.h;}
-    if(pos==='tc'||pos==='bc'){nb.w=b0.w;nb.x=b0.x;}
-    if(pos==='ml'||pos==='mr'){nb.h=b0.h;nb.y=b0.y;}
-    if(ev.shiftKey&&(pos==='tl'||pos==='tr'||pos==='bl'||pos==='br')){
-      var rat=b0.w/b0.h;
-      if(nb.w/nb.h>rat) nb.h=nb.w/rat; else nb.w=nb.h*rat;
-      if(pos==='tl'){nb.x=b0.x+b0.w-nb.w;nb.y=b0.y+b0.h-nb.h;}
-      if(pos==='tr') nb.y=b0.y+b0.h-nb.h;
-      if(pos==='bl') nb.x=b0.x+b0.w-nb.w;
-    }
-    snaps.forEach(function(s){
-      var el=s.el;
-      var nax=nb.x+s.rx*nb.w, nay=nb.y+s.ry*nb.h;
-      var nw=Math.max(10,s.rw*nb.w), nh=Math.max(10,s.rh*nb.h);
-      var savedRot=el.rot; el.rot=0;
-      encodeUDim2(el,nax,nay,nw,nh);
-      el.rot=savedRot;
-      renderEl(el); getDescendants(el.id).forEach(renderEl);
-    });
-    if(_gb){
-      _gb.style.left=nb.x+'px'; _gb.style.top=nb.y+'px';
-      _gb.style.width=nb.w+'px'; _gb.style.height=nb.h+'px';
-    }
-    document.getElementById('cinfo').textContent='Group · '+Math.round(nb.x)+','+Math.round(nb.y)+' · '+Math.round(nb.w)+'×'+Math.round(nb.h);
-  }
-  function mu(){document.removeEventListener('mousemove',mm); document.removeEventListener('mouseup',mu); renderGroupBox();}
-  document.addEventListener('mousemove',mm);
-  document.addEventListener('mouseup',mu);
-}
-
-function calcGroupBounds(){
-  var grp=selGroup.map(getEl).filter(Boolean);
-  if(grp.length<2)return null;
-  var mnx=Infinity,mny=Infinity,mxx=-Infinity,mxy=-Infinity;
-  grp.forEach(function(e){
-    var b=getRotatedBounds(e);
-    mnx=Math.min(mnx,b.x);mny=Math.min(mny,b.y);
-    mxx=Math.max(mxx,b.x+b.w);mxy=Math.max(mxy,b.y+b.h);
-  });
-  return{x:mnx,y:mny,w:mxx-mnx,h:mxy-mny};
+  document.getElementById('cinfo').textContent=
+    el.type+' · '+Math.round(r.x)+','+Math.round(r.y)+
+    ' · '+Math.round(r.w)+'×'+Math.round(r.h)+
+    (el.rot?' · '+(el.rot||0).toFixed(1)+'°':'');
 }
 
 // ───────────────────────────────────────────────────────────────
-// §9b  snapGuides — sửa để nhận object {x,y,w,h} (temp hoặc el)
+// §9b  snapGuides
 // ───────────────────────────────────────────────────────────────
-// snapGuides nhận obj có .x/.y/.w/.h (world coords), mutate trực tiếp
-// (không thay đổi signature — vẫn gọi snapGuides(el) từ §21)
-// Nhưng el lúc này KHÔNG có .x/.y nên cần wrapper:
- 
-var _origSnapGuides = null; // sẽ patch sau khi §21 load
- 
+
+var _origSnapGuides=null;
+
 function snapGuidesRect(rect){
   clearGuides();
-  if(selGroup.length>1) return {dx:0,dy:0};
-  // FIX: dùng rect._id thay vì el._id/el.id (el không tồn tại trong scope này)
+  if(selGroup.length>1) return{dx:0,dy:0};
   var others=els.filter(function(e){return e.id!==(rect._id||rect.id||'');});
-  if(!others.length) return {dx:0,dy:0};
-  var ex=rect.x, ey=rect.y, ew=rect.w, eh=rect.h;
-  var ecx=ex+ew/2, ecy=ey+eh/2, ex2=ex+ew, ey2=ey+eh;
-  var snapX=null, snapY=null;
+  if(!others.length) return{dx:0,dy:0};
+  var ex=rect.x,ey=rect.y,ew=rect.w,eh=rect.h;
+  var ecx=ex+ew/2,ecy=ey+eh/2,ex2=ex+ew,ey2=ey+eh;
+  var snapX=null,snapY=null;
   var THRESH=SNAP_THRESHOLD;
   others.forEach(function(o){
     if(snapX!==null&&snapY!==null) return;
     var or=getElRect(o);
-    var ox=or.x, oy=or.y, ow=or.w, oh=or.h;
-    var ocx=ox+ow/2, ocy=oy+oh/2, ox2=ox+ow, oy2=oy+oh;
+    var ox=or.x,oy=or.y,ow=or.w,oh=or.h;
+    var ocx=ox+ow/2,ocy=oy+oh/2,ox2=ox+ow,oy2=oy+oh;
     [[ex,ox],[ex,ox2],[ex,ocx],[ecx,ox],[ecx,ocx],[ecx,ox2],[ex2,ox],[ex2,ox2],[ex2,ocx]]
-      .forEach(function(p){ if(snapX===null&&Math.abs(p[0]-p[1])<THRESH){rect.x+=p[1]-p[0];ex=rect.x;ex2=ex+ew;ecx=ex+ew/2;snapX=p[1];} });
+      .forEach(function(p){if(snapX===null&&Math.abs(p[0]-p[1])<THRESH){rect.x+=p[1]-p[0];ex=rect.x;ex2=ex+ew;ecx=ex+ew/2;snapX=p[1];}});
     [[ey,oy],[ey,oy2],[ey,ocy],[ecy,oy],[ecy,ocy],[ecy,oy2],[ey2,oy],[ey2,oy2],[ey2,ocy]]
-      .forEach(function(p){ if(snapY===null&&Math.abs(p[0]-p[1])<THRESH){rect.y+=p[1]-p[0];ey=rect.y;ey2=ey+eh;ecy=ey+eh/2;snapY=p[1];} });
+      .forEach(function(p){if(snapY===null&&Math.abs(p[0]-p[1])<THRESH){rect.y+=p[1]-p[0];ey=rect.y;ey2=ey+eh;ecy=ey+eh/2;snapY=p[1];}});
   });
   if(snapX!==null) _drawGuide(true,snapX,'#22d3ee');
   if(snapY!==null) _drawGuide(false,snapY,'#22d3ee');
-  return {dx:0,dy:0};
+  return{dx:0,dy:0};
 }
- 
- 
+
 // ───────────────────────────────────────────────────────────────
-// §9c  GROUP TRANSFORM — sửa để dùng getElRect
+// §9c  GROUP TRANSFORM
 // ───────────────────────────────────────────────────────────────
- 
+
 function startGroupDrag(e){
   saveH();
-  var grp = selGroup.map(getEl).filter(Boolean);
-  // Snapshot world rect của từng element
-  var snaps = grp.map(function(el){
+  var grp=selGroup.map(getEl).filter(Boolean);
+  var snaps=grp.map(function(el){
     var r=getElRect(el); return{el:el,wx:r.x,wy:r.y,ww:r.w,wh:r.h};
   });
   var smx=e.clientX, smy=e.clientY;
- 
+
   function mm(ev){
     var dx=ev.clientX-smx, dy=ev.clientY-smy;
-    // Tính group bounds tạm
-    var tempRects = snaps.map(function(s){ return{x:s.wx+dx,y:s.wy+dy,w:s.ww,h:s.wh}; });
+    var tempRects=snaps.map(function(s){return{x:s.wx+dx,y:s.wy+dy,w:s.ww,h:s.wh};});
     var mnx=Math.min.apply(null,tempRects.map(function(r){return r.x;}));
     var mny=Math.min.apply(null,tempRects.map(function(r){return r.y;}));
     var mxx=Math.max.apply(null,tempRects.map(function(r){return r.x+r.w;}));
     var mxy=Math.max.apply(null,tempRects.map(function(r){return r.y+r.h;}));
-    var snapOff = snapGuidesGroup({x:mnx,y:mny,w:mxx-mnx,h:mxy-mny});
+    var snapOff=snapGuidesGroup({x:mnx,y:mny,w:mxx-mnx,h:mxy-mny});
     dx+=snapOff.dx; dy+=snapOff.dy;
- 
+
     snaps.forEach(function(s){
       var newX=s.wx+dx, newY=s.wy+dy;
       var savedRot=s.el.rot; s.el.rot=0;
-      encodeUDim2(s.el, newX, newY, s.ww, s.wh);
+      encodeUDim2(s.el,newX,newY,s.ww,s.wh);
       s.el.rot=savedRot;
       renderEl(s.el);
       getDescendants(s.el.id).forEach(renderEl);
@@ -743,10 +640,13 @@ function startGroupDrag(e){
     renderGroupBox();
     var b=calcGroupBounds();
     if(b){
-      document.getElementById('cinfo').textContent='Group · '+Math.round(b.x)+','+Math.round(b.y)+' · '+Math.round(b.w)+'×'+Math.round(b.h);
+      document.getElementById('cinfo').textContent=
+        'Group · '+Math.round(b.x)+','+Math.round(b.y)+
+        ' · '+Math.round(b.w)+'×'+Math.round(b.h);
       updateRulerGroup(b,grp);
     }
   }
+
   function mu(){
     clearGuides();
     document.removeEventListener('mousemove',mm);
@@ -756,18 +656,17 @@ function startGroupDrag(e){
   document.addEventListener('mousemove',mm);
   document.addEventListener('mouseup',mu);
 }
- 
+
 function startGroupScale(pos,e){
   saveH();
   var b0=calcGroupBounds(); if(!b0)return;
   var grp=selGroup.map(getEl).filter(Boolean);
-  // Snapshot ratio của từng el so với group bounds
   var snaps=grp.map(function(el){
     var r=getElRect(el);
-    return{el:el, rx:(r.x-b0.x)/b0.w, ry:(r.y-b0.y)/b0.h, rw:r.w/b0.w, rh:r.h/b0.h};
+    return{el:el,rx:(r.x-b0.x)/b0.w,ry:(r.y-b0.y)/b0.h,rw:r.w/b0.w,rh:r.h/b0.h};
   });
   var sx=e.clientX, sy=e.clientY;
- 
+
   function mm(ev){
     var dx=ev.clientX-sx, dy=ev.clientY-sy;
     var nb={x:b0.x,y:b0.y,w:b0.w,h:b0.h};
@@ -791,48 +690,42 @@ function startGroupScale(pos,e){
       var savedRot=el.rot; el.rot=0;
       encodeUDim2(el,nax,nay,nw,nh);
       el.rot=savedRot;
-      renderEl(el); getDescendants(el.id).forEach(renderEl);
+      renderEl(el);
+      getDescendants(el.id).forEach(renderEl);
     });
     if(_gb){
       _gb.style.left=nb.x+'px'; _gb.style.top=nb.y+'px';
       _gb.style.width=nb.w+'px'; _gb.style.height=nb.h+'px';
     }
-    document.getElementById('cinfo').textContent='Group · '+Math.round(nb.x)+','+Math.round(nb.y)+' · '+Math.round(nb.w)+'×'+Math.round(nb.h);
+    document.getElementById('cinfo').textContent=
+      'Group · '+Math.round(nb.x)+','+Math.round(nb.y)+
+      ' · '+Math.round(nb.w)+'×'+Math.round(nb.h);
   }
-  function mu(){document.removeEventListener('mousemove',mm); document.removeEventListener('mouseup',mu); renderGroupBox();}
+
+  function mu(){
+    document.removeEventListener('mousemove',mm);
+    document.removeEventListener('mouseup',mu);
+    renderGroupBox();
+  }
   document.addEventListener('mousemove',mm);
   document.addEventListener('mouseup',mu);
 }
- 
-// calcGroupBounds — sửa dùng getElRect
+
 function calcGroupBounds(){
   var grp=selGroup.map(getEl).filter(Boolean);
-  if(grp.length<2)return null;
+  if(grp.length<2) return null;
   var mnx=Infinity,mny=Infinity,mxx=-Infinity,mxy=-Infinity;
   grp.forEach(function(e){
     var b=getRotatedBounds(e);
-    mnx=Math.min(mnx,b.x);mny=Math.min(mny,b.y);
-    mxx=Math.max(mxx,b.x+b.w);mxy=Math.max(mxy,b.y+b.h);
+    mnx=Math.min(mnx,b.x); mny=Math.min(mny,b.y);
+    mxx=Math.max(mxx,b.x+b.w); mxy=Math.max(mxy,b.y+b.h);
   });
   return{x:mnx,y:mny,w:mxx-mnx,h:mxy-mny};
 }
- 
- 
+
 // ───────────────────────────────────────────────────────────────
-// §9d  CANVAS DRAW — sửa mkEl → mkElFromPixel
+// §9d  CANVAS DRAW — xem §11 để biết mkElFromPixel + encodeUDim2
 // ───────────────────────────────────────────────────────────────
- 
-// Patch §11: thay thế phần tạo el trong draw mode
-// Gọi mkElFromPixel thay vì mkEl(type,x,y,w,h)
-// Trong ca.onmousedown draw block, thay:
-//   var el=mkEl(dtool||'Frame',ds.x,ds.y,10,10);
-// thành:
-//   var el=mkElFromPixel(dtool||'Frame',ds.x,ds.y,10,10);
-// Và khi mouseup:
-//   var rw=Math.abs(nx-ds.x)||10, rh=Math.abs(ny-ds.y)||10;
-//   encodeUDim2(el, Math.min(ds.x,nx), Math.min(ds.y,ny), rw, rh);
-// (xem §11 patch notes ở dưới)
- 
 // ───────────────────────────────────────────────────────────────
 // §10 SELECTION
 // ───────────────────────────────────────────────────────────────
