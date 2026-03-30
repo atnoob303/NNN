@@ -27,7 +27,7 @@
 // §1 STATE & CONSTANTS
 var els=[],sel=null,selGroup=[],tool='sel',idc=0,hist=[],dtool=null,etab='lua';
 var rulerOn=false,tMode=0,hierDrag=null,distGuideOn=true;
-var TMODES=['Scale','Move','Rotate','All','Warp'],TICONS=['⤢','✥','↻','⊕','⌀'],VERSION='Alpha 0.0.6.17';
+var TMODES=['Scale','Move','Rotate','All','Warp'],TICONS=['⤢','✥','↻','⊕','⌀'],VERSION='Alpha 0.0.6.18';
 var FONTS=['GothamMedium','GothamBold','Gotham','Arial','ArialBold','Legacy','Highway','SciFi','Antique','Cartoon','Code','Fantasy','Garamond','Arcade','Ubuntu','Merriweather','Oswald','Nunito','Bangers','Creepster'];
 var DW={TextLabel:160,TextButton:120,ImageLabel:100,ImageButton:100,VideoFrame:200,ViewportFrame:160,ScreenGui:400,ScrollingFrame:200,CanvasGroup:180};
 var DH={TextLabel:32,TextButton:36,ImageLabel:100,ImageButton:100,VideoFrame:120,ViewportFrame:120,ScreenGui:300,ScrollingFrame:200,CanvasGroup:180};
@@ -304,9 +304,9 @@ function startScaleHandle(el,pos,e){
     el.rot=savedRot;
     renderEl(el);getDescendants(el.id).forEach(renderEl);renderProps();updInfo(el);
     var b=getRotatedBounds(el);
-    updateRuler(el);drawResizeGuides(b.x,b.y,b.w,b.h);drawBoundingBox(b.x,b.y,b.w,b.h);drawDistanceGuides(b.x,b.y,b.w,b.h);
+    updateRuler(el);drawResizeGuides(b.x,b.y,b.w,b.h);drawBoundingBox(b.x,b.y,b.w,b.h);drawDistanceGuides(b.x,b.y,b.w,b.h);updateRotGuide(el);
   }
-  function mu(){clearResizeGuides();if(sel)updateRuler(getEl(sel));document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);}
+  function mu(){clearResizeGuides();if(sel){updateRuler(getEl(sel));updateRotGuide(getEl(sel));}document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);}
   document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
 }
 // ───────────────────────────────────────────────────────────────
@@ -342,7 +342,7 @@ function startDrag(el,e){
     descSnaps.forEach(function(s){
       var savedRot2=s.el.rot;s.el.rot=0;encodeUDim2(s.el,s.wx+actualDX,s.wy+actualDY,s.ww,s.wh);s.el.rot=savedRot2;renderEl(s.el);
     });
-    renderEl(el);updInfo(el);updateRuler(el);
+    renderEl(el);updInfo(el);updateRuler(el);updateRotGuide(el);
     var b=getRotatedBounds(el);drawDistanceGuides(b.x,b.y,b.w,b.h);renderProps();
   }
   function mu(ev){
@@ -351,7 +351,7 @@ function startDrag(el,e){
     if(ov)ov.querySelectorAll('.rul-dist').forEach(function(e){e.remove();});
     if(ov&&!rulerOn&&!distGuideOn)ov.style.display='none';
     document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);
-    if(ev.altKey){tryReparent(el);renderEl(el);}
+    if(ev.altKey){tryReparent(el);renderEl(el);}updateRotGuide(el);renderHier();
     renderHier();
   }
   document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
@@ -370,8 +370,10 @@ function startRotate(el,e){
     if(rulerOn)updateRuler(el);
     var b=getRotatedBounds(el);drawBoundingBox(b.x,b.y,b.w,b.h);drawResizeGuides(b.x,b.y,b.w,b.h);
     if(distGuideOn)drawDistanceGuides(b.x,b.y,b.w,b.h);
+    updateRuler(el);
+    updateRotGuide(el);
   }
-  function mu(){clearResizeGuides();if(sel)updateRuler(getEl(sel));document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);}
+ function mu(){clearResizeGuides();if(sel)updateRuler(getEl(sel));updateRotGuide(getEl(sel));document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);}
   document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
 }
 // ───────────────────────────────────────────────────────────────
@@ -529,7 +531,7 @@ function selEl(id,shift){
     renderEl(e);
   });
   updateAlignBar();renderProps();renderHier();renderGroupBox();
-  if(id&&selGroup.length===1){var el=getEl(id);if(el)updateRuler(el);}
+  if(id&&selGroup.length===1){var el=getEl(id);if(el){updateRuler(el);updateRotGuide(el);}}
 }
 
 var _gb=null,_gbH=[];
@@ -1114,7 +1116,37 @@ function drawDistanceGuides(x,y,w,h){
     if(ex<ox2&&ex2>ox){var midX=Math.round((Math.max(ex,ox)+Math.min(ex2,ox2))/2);if(oy>ey2){var gB=oy-ey2;_makeDistLine(ov,false,midX,ey2,gB,color);_makeDistLabel(ov,midX+4,ey2+gB/2,gB+'px',color);}if(ey>oy2){var gT=ey-oy2;_makeDistLine(ov,false,midX,oy2,gT,color);_makeDistLabel(ov,midX+4,oy2+gT/2,gT+'px',color);}}
   });
 }
-function clearResizeGuides(){var ov=document.getElementById('ruler-overlay');if(!ov)return;ov.querySelectorAll('.rul-bbox,.rul-resize,.rul-dist,.rul-single').forEach(function(e){e.remove();});if(!rulerOn&&!distGuideOn)ov.style.display='none';else if(rulerOn)ov.style.display='block';}
+function clearResizeGuides(){var ov=document.getElementById('ruler-overlay');if(!ov)return;ov.querySelectorAll('.rul-bbox,.rul-resize,.rul-dist,.rul-single,.rul-rot').forEach(function(e){e.remove();});if(!rulerOn&&!distGuideOn)ov.style.display='none';else if(rulerOn)ov.style.display='block';}
+
+function updateRotGuide(el){
+  var ov=document.getElementById('ruler-overlay');if(!ov)return;
+  ov.querySelectorAll('.rul-rot').forEach(function(e){e.remove();});
+  if(!el)return;
+  var rot=((el.rot||0)%360+360)%360;
+  if(rot<0.5||Math.abs(rot-180)<0.5||rot>359.5)return;
+  if(ov.style.display==='none')ov.style.display='block';
+  var r=getElRect(el),cx=r.x+r.w/2,cy=r.y+r.h/2,rad=rot*Math.PI/180,len=Math.max(r.w,r.h)*3;
+  var color='rgba(167,139,250,0.85)',cm='rgba(167,139,250,0.35)';
+  var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.className.baseVal='rul-rot';svg.style.cssText='position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:711;overflow:visible;';
+  function mkL(x1,y1,x2,y2,col,dash,op){var l=document.createElementNS('http://www.w3.org/2000/svg','line');l.setAttribute('x1',x1);l.setAttribute('y1',y1);l.setAttribute('x2',x2);l.setAttribute('y2',y2);l.setAttribute('stroke',col);l.setAttribute('stroke-width','1');l.setAttribute('stroke-dasharray',dash);l.setAttribute('opacity',op);svg.appendChild(l);}
+  var r90=rad+Math.PI/2,hw=r.w/2,hh=r.h/2,cos=Math.cos(rad),sin=Math.sin(rad),INF=9999;
+  // tia chéo chính mờ xuyên qua center
+  mkL(Math.round(cx-cos*len),Math.round(cy-sin*len),Math.round(cx+cos*len),Math.round(cy+sin*len),cm,'4,3','0.45');
+  // tia dọc frame vuông góc
+  mkL(Math.round(cx-Math.cos(r90)*hh),Math.round(cy-Math.sin(r90)*hh),Math.round(cx+Math.cos(r90)*hh),Math.round(cy+Math.sin(r90)*hh),cm,'3,3','0.35');
+  // 4 tia kéo dài hết màn hình theo hướng cạnh frame
+  // top & bottom edge → hướng cos,sin (ngang frame), đi qua cy±hh rotated
+  var topCX=cx-Math.cos(r90)*hh,topCY=cy-Math.sin(r90)*hh;
+  var botCX=cx+Math.cos(r90)*hh,botCY=cy+Math.sin(r90)*hh;
+  mkL(Math.round(topCX-cos*INF),Math.round(topCY-sin*INF),Math.round(topCX+cos*INF),Math.round(topCY+sin*INF),'rgba(167,139,250,0.5)','4,3','0.6');
+  mkL(Math.round(botCX-cos*INF),Math.round(botCY-sin*INF),Math.round(botCX+cos*INF),Math.round(botCY+sin*INF),'rgba(167,139,250,0.5)','4,3','0.6');
+  // left & right edge → hướng r90, đi qua cx±hw rotated
+  var lCX=cx-cos*hw,lCY=cy-sin*hw,rCX=cx+cos*hw,rCY=cy+sin*hw;
+  mkL(Math.round(lCX-Math.cos(r90)*INF),Math.round(lCY-Math.sin(r90)*INF),Math.round(lCX+Math.cos(r90)*INF),Math.round(lCY+Math.sin(r90)*INF),'rgba(167,139,250,0.5)','4,3','0.6');
+  mkL(Math.round(rCX-Math.cos(r90)*INF),Math.round(rCY-Math.sin(r90)*INF),Math.round(rCX+Math.cos(r90)*INF),Math.round(rCY+Math.sin(r90)*INF),'rgba(167,139,250,0.5)','4,3','0.6');
+  ov.appendChild(svg);
+  var lb=document.createElement('div');lb.className='rul-rot rul-lbl';lb.style.cssText='position:absolute;left:'+(cx+8)+'px;top:'+(cy-18)+'px;color:'+color+';background:rgba(13,13,20,.85);pointer-events:none;z-index:712;';lb.textContent='↻ '+parseFloat(el.rot).toFixed(1)+'°';ov.appendChild(lb);
+}
 
 // ───────────────────────────────────────────────────────────────
 // §21  SMART GUIDES — sửa dùng getElRect
