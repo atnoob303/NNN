@@ -80,6 +80,7 @@ function toast(m){var t=document.getElementById('toast');t.textContent=m;t.style
 function hint(){var a=els.length>0;document.getElementById('ehint').style.display=a?'none':'flex';document.getElementById('eemp').style.display=a?'none':'block';}
 function saveH(){hist.push(JSON.parse(JSON.stringify(els)));if(hist.length>50)hist.shift();}
 function getEl(id){return els.find(function(e){return e.id===id;});}
+function restoreRotGuideBoost(){var prev=document.querySelector('[data-rotguide-boost]');if(prev){prev.style.zIndex=prev.dataset.rotguideBoost;delete prev.dataset.rotguideBoost;}}
 
 // ───────────────────────────────────────────────────────────────
 // §3  PARENT / CHILDREN — UDim2 as source of truth
@@ -413,7 +414,11 @@ function snapGuidesRect(rect){
 }
 // ───────────────────────────────────────────────────────────────
 function snapGuides(el){
-  clearGuides();if(selGroup.length>1)return;
+  clearGuides();
+  var elObj=getEl(el.id||'');
+  var hasRot=elObj&&Math.abs((elObj.rot||0)%360)>0.5&&Math.abs(((elObj.rot||0)%360+360)%360-180)>0.5;
+  if(hasRot){_rotSnap(el,elObj);return;}
+  if(selGroup.length>1)return;
   var others=els.filter(function(e){return e.id!==el.id;});if(!others.length)return;
   var ex=el.x,ey=el.y,ew=el.w,eh=el.h,ecx=ex+ew/2,ecy=ey+eh/2,ex2=ex+ew,ey2=ey+eh,snapX=null,snapY=null;
   others.forEach(function(o){
@@ -427,6 +432,79 @@ function snapGuides(el){
   if(snapX!==null)_drawGuide(true,snapX,'#22d3ee');
   if(snapY!==null)_drawGuide(false,snapY,'#22d3ee');
   _equalSpacingSnap(el,others,snapX,snapY);
+}
+// ───────────────────────────────────────────────────────────────
+function _rotSnap(el,elObj){
+  if(!elObj)return;
+  var r=getElRect(elObj),rad=r.rot*Math.PI/180,cos=Math.cos(rad),sin=Math.sin(rad);
+  var hw=r.w/2,hh=r.h/2,cx=r.x+hw,cy=r.y+hh;
+  // 8 điểm của frame đang chọn (world coords)
+  var pts=[
+    {x:cx-cos*hw-(-sin)*hh, y:cy-sin*hw-(cos)*hh},  // tl
+    {x:cx,                   y:cy-sin*hw-(cos)*hh},  // tc — dùng mid top
+    {x:cx+cos*hw-(-sin)*hh, y:cy+sin*hw-(cos)*hh},  // tr
+    {x:cx-cos*hw,            y:cy-sin*hw},            // ml
+    {x:cx+cos*hw,            y:cy+sin*hw},            // mr
+    {x:cx-cos*hw+(-sin)*hh, y:cy-sin*hw+(cos)*hh},  // bl
+    {x:cx,                   y:cy+sin*hw+(cos)*hh},  // bc
+    {x:cx+cos*hw+(-sin)*hh, y:cy+sin*hw+(cos)*hh},  // br
+  ];
+  // fix tính đúng 8 điểm rotated
+  var corners=[
+    {lx:-hw,ly:-hh},{lx:0,ly:-hh},{lx:hw,ly:-hh},
+    {lx:-hw,ly:0},                 {lx:hw,ly:0},
+    {lx:-hw,ly:hh}, {lx:0,ly:hh}, {lx:hw,ly:hh}
+  ];
+  pts=corners.map(function(p){return{x:cx+p.lx*cos-p.ly*sin, y:cy+p.lx*sin+p.ly*cos};});
+  var THRESH=SNAP_THRESHOLD,bestDist=THRESH,bestSnap=null;
+  els.forEach(function(o){
+    if(o.id===elObj.id)return;
+    var oRot=((o.rot||0)%360+360)%360;
+    if(oRot<0.5||Math.abs(oRot-180)<0.5||oRot>359.5)return;
+    var or=getElRect(o),ocx=or.x+or.w/2,ocy=or.y+or.h/2,orad=oRot*Math.PI/180;
+    var ocos=Math.cos(orad),osin=Math.sin(orad),or90=orad+Math.PI/2,ohw=or.w/2,ohh=or.h/2;
+    // 4 trục tia tím của frame kia
+    var axes=[
+      {px:ocx-Math.cos(or90)*ohh, py:ocy-Math.sin(or90)*ohh, dx:ocos, dy:osin}, // top edge axis
+      {px:ocx+Math.cos(or90)*ohh, py:ocy+Math.sin(or90)*ohh, dx:ocos, dy:osin}, // bot edge axis
+      {px:ocx-ocos*ohw,           py:ocy-osin*ohw,           dx:Math.cos(or90), dy:Math.sin(or90)}, // left edge axis
+      {px:ocx+ocos*ohw,           py:ocy+osin*ohw,           dx:Math.cos(or90), dy:Math.sin(or90)}, // right edge axis
+    ];
+    axes.forEach(function(ax){
+      pts.forEach(function(pt){
+        // khoảng cách vuông góc từ pt tới đường thẳng ax
+        var ex2=pt.x-ax.px,ey2=pt.y-ax.py;
+        var dist=Math.abs(ex2*(-ax.dy)+ey2*ax.dx); // cross product = perpendicular dist
+        if(dist<bestDist){
+          bestDist=dist;
+          // tính vector cần dịch để snap pt vào trục
+          var proj=ex2*(-ax.dy)+ey2*ax.dx; // signed perp dist
+          bestSnap={dx:-proj*(-ax.dy), dy:-proj*ax.dx, ax:ax, pt:pt};
+        }
+      });
+    });
+  });
+  if(bestSnap){
+    el.x+=bestSnap.dx;el.y+=bestSnap.dy;
+    // vẽ tia trắng dọc theo trục snap
+    var ax=bestSnap.ax,INF=9999;
+    var wx=bestSnap.pt.x+bestSnap.dx,wy=bestSnap.pt.y+bestSnap.dy;
+    // tia trắng đi qua điểm snap theo hướng vuông góc với trục (tức là song song trục kia)
+    _drawRotSnapGuide(wx,wy,ax.dx,ax.dy);
+  }
+}
+// ───────────────────────────────────────────────────────────────
+function _drawRotSnapGuide(x,y,dx,dy){
+  var cv=document.getElementById('cv'),INF=9999;
+  var g=document.createElementNS('http://www.w3.org/2000/svg','svg');
+  g.className='guide-rot-snap';
+  g.style.cssText='position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:800;overflow:visible;';
+  var l=document.createElementNS('http://www.w3.org/2000/svg','line');
+  l.setAttribute('x1',Math.round(x-dx*INF));l.setAttribute('y1',Math.round(y-dy*INF));
+  l.setAttribute('x2',Math.round(x+dx*INF));l.setAttribute('y2',Math.round(y+dy*INF));
+  l.setAttribute('stroke','rgba(255,255,255,0.75)');l.setAttribute('stroke-width','1');
+  l.setAttribute('stroke-dasharray','5,3');l.setAttribute('opacity','0.9');
+  g.appendChild(l);cv.appendChild(g);_guideLines.push(g);
 }
 // ───────────────────────────────────────────────────────────────
 function snapGuidesGroup(bounds){
@@ -521,6 +599,7 @@ function calcGroupBounds(){
 // ───────────────────────────────────────────────────────────────
 
 function selEl(id,shift){
+  restoreRotGuideBoost();
   clearResizeGuides();clearGuides();
   if(!id){var ov=document.getElementById('ruler-overlay');if(ov)ov.querySelectorAll('.rul-single').forEach(function(e){e.remove();});}
   if(shift&&id){if(selGroup.indexOf(id)<0)selGroup.push(id);else selGroup=selGroup.filter(function(x){return x!==id;});sel=id;}
@@ -1116,38 +1195,52 @@ function drawDistanceGuides(x,y,w,h){
     if(ex<ox2&&ex2>ox){var midX=Math.round((Math.max(ex,ox)+Math.min(ex2,ox2))/2);if(oy>ey2){var gB=oy-ey2;_makeDistLine(ov,false,midX,ey2,gB,color);_makeDistLabel(ov,midX+4,ey2+gB/2,gB+'px',color);}if(ey>oy2){var gT=ey-oy2;_makeDistLine(ov,false,midX,oy2,gT,color);_makeDistLabel(ov,midX+4,oy2+gT/2,gT+'px',color);}}
   });
 }
-function clearResizeGuides(){var ov=document.getElementById('ruler-overlay');if(!ov)return;ov.querySelectorAll('.rul-bbox,.rul-resize,.rul-dist,.rul-single,.rul-rot').forEach(function(e){e.remove();});if(!rulerOn&&!distGuideOn)ov.style.display='none';else if(rulerOn)ov.style.display='block';}
+function clearResizeGuides(){restoreRotGuideBoost();var ov=document.getElementById('ruler-overlay');if(!ov)return;ov.querySelectorAll('.rul-bbox,.rul-resize,.rul-dist,.rul-single,.rul-rot').forEach(function(e){e.remove();});if(!rulerOn&&!distGuideOn)ov.style.display='none';else if(rulerOn)ov.style.display='block';}
 
 function updateRotGuide(el){
   var ov=document.getElementById('ruler-overlay');if(!ov)return;
+  // restore z-index cũ nếu có
+  var prev=document.querySelector('[data-rotguide-boost]');
+  if(prev){prev.style.zIndex=prev.dataset.rotguideBoost;delete prev.dataset.rotguideBoost;}
   ov.querySelectorAll('.rul-rot').forEach(function(e){e.remove();});
   if(!el)return;
   var rot=((el.rot||0)%360+360)%360;
   if(rot<0.5||Math.abs(rot-180)<0.5||rot>359.5)return;
   if(ov.style.display==='none')ov.style.display='block';
+  // boost z-index của element đang chọn lên cao hơn SVG tia hồng
+  var elDom=document.getElementById(el.id);
+  if(elDom){elDom.dataset.rotguideBoost=elDom.style.zIndex||'1';elDom.style.zIndex=900;}
   var r=getElRect(el),cx=r.x+r.w/2,cy=r.y+r.h/2,rad=rot*Math.PI/180,len=Math.max(r.w,r.h)*3;
-  var color='rgba(167,139,250,0.85)',cm='rgba(167,139,250,0.35)';
-  var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.className.baseVal='rul-rot';svg.style.cssText='position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:711;overflow:visible;';
+  var color='rgba(167,139,250,0.85)',cm='rgba(167,139,250,0.35)',INF=9999;
+  var svg=document.createElementNS('http://www.w3.org/2000/svg','svg');svg.className.baseVal='rul-rot';
+  svg.style.cssText='position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:711;overflow:visible;';
   function mkL(x1,y1,x2,y2,col,dash,op){var l=document.createElementNS('http://www.w3.org/2000/svg','line');l.setAttribute('x1',x1);l.setAttribute('y1',y1);l.setAttribute('x2',x2);l.setAttribute('y2',y2);l.setAttribute('stroke',col);l.setAttribute('stroke-width','1');l.setAttribute('stroke-dasharray',dash);l.setAttribute('opacity',op);svg.appendChild(l);}
-  var r90=rad+Math.PI/2,hw=r.w/2,hh=r.h/2,cos=Math.cos(rad),sin=Math.sin(rad),INF=9999;
-  // tia chéo chính mờ xuyên qua center
+  els.forEach(function(o){
+    if(o.id===el.id)return;
+    var oRot=((o.rot||0)%360+360)%360;
+    if(oRot<0.5||Math.abs(oRot-180)<0.5||oRot>359.5)return;
+    var or=getElRect(o),ocx=or.x+or.w/2,ocy=or.y+or.h/2,orad=oRot*Math.PI/180;
+    var or90=orad+Math.PI/2,ohw=or.w/2,ohh=or.h/2,ocos=Math.cos(orad),osin=Math.sin(orad),pk='rgba(251,113,133,0.25)';
+    var tCX=ocx-Math.cos(or90)*ohh,tCY=ocy-Math.sin(or90)*ohh;
+    var bCX=ocx+Math.cos(or90)*ohh,bCY=ocy+Math.sin(or90)*ohh;
+    var lCX=ocx-ocos*ohw,lCY=ocy-osin*ohw,rCX=ocx+ocos*ohw,rCY=ocy+osin*ohw;
+    mkL(Math.round(tCX-ocos*INF),Math.round(tCY-osin*INF),Math.round(tCX+ocos*INF),Math.round(tCY+osin*INF),pk,'4,4','0.5');
+    mkL(Math.round(bCX-ocos*INF),Math.round(bCY-osin*INF),Math.round(bCX+ocos*INF),Math.round(bCY+osin*INF),pk,'4,4','0.5');
+    mkL(Math.round(lCX-Math.cos(or90)*INF),Math.round(lCY-Math.sin(or90)*INF),Math.round(lCX+Math.cos(or90)*INF),Math.round(lCY+Math.sin(or90)*INF),pk,'4,4','0.5');
+    mkL(Math.round(rCX-Math.cos(or90)*INF),Math.round(rCY-Math.sin(or90)*INF),Math.round(rCX+Math.cos(or90)*INF),Math.round(rCY+Math.sin(or90)*INF),pk,'4,4','0.5');
+  });
+  var r90=rad+Math.PI/2,hw=r.w/2,hh=r.h/2,cos=Math.cos(rad),sin=Math.sin(rad);
   mkL(Math.round(cx-cos*len),Math.round(cy-sin*len),Math.round(cx+cos*len),Math.round(cy+sin*len),cm,'4,3','0.45');
-  // tia dọc frame vuông góc
   mkL(Math.round(cx-Math.cos(r90)*hh),Math.round(cy-Math.sin(r90)*hh),Math.round(cx+Math.cos(r90)*hh),Math.round(cy+Math.sin(r90)*hh),cm,'3,3','0.35');
-  // 4 tia kéo dài hết màn hình theo hướng cạnh frame
-  // top & bottom edge → hướng cos,sin (ngang frame), đi qua cy±hh rotated
-  var topCX=cx-Math.cos(r90)*hh,topCY=cy-Math.sin(r90)*hh;
-  var botCX=cx+Math.cos(r90)*hh,botCY=cy+Math.sin(r90)*hh;
+  var topCX=cx-Math.cos(r90)*hh,topCY=cy-Math.sin(r90)*hh,botCX=cx+Math.cos(r90)*hh,botCY=cy+Math.sin(r90)*hh;
   mkL(Math.round(topCX-cos*INF),Math.round(topCY-sin*INF),Math.round(topCX+cos*INF),Math.round(topCY+sin*INF),'rgba(167,139,250,0.5)','4,3','0.6');
   mkL(Math.round(botCX-cos*INF),Math.round(botCY-sin*INF),Math.round(botCX+cos*INF),Math.round(botCY+sin*INF),'rgba(167,139,250,0.5)','4,3','0.6');
-  // left & right edge → hướng r90, đi qua cx±hw rotated
-  var lCX=cx-cos*hw,lCY=cy-sin*hw,rCX=cx+cos*hw,rCY=cy+sin*hw;
-  mkL(Math.round(lCX-Math.cos(r90)*INF),Math.round(lCY-Math.sin(r90)*INF),Math.round(lCX+Math.cos(r90)*INF),Math.round(lCY+Math.sin(r90)*INF),'rgba(167,139,250,0.5)','4,3','0.6');
-  mkL(Math.round(rCX-Math.cos(r90)*INF),Math.round(rCY-Math.sin(r90)*INF),Math.round(rCX+Math.cos(r90)*INF),Math.round(rCY+Math.sin(r90)*INF),'rgba(167,139,250,0.5)','4,3','0.6');
+  var lCX2=cx-cos*hw,lCY2=cy-sin*hw,rCX2=cx+cos*hw,rCY2=cy+sin*hw;
+  mkL(Math.round(lCX2-Math.cos(r90)*INF),Math.round(lCY2-Math.sin(r90)*INF),Math.round(lCX2+Math.cos(r90)*INF),Math.round(lCY2+Math.sin(r90)*INF),'rgba(167,139,250,0.5)','4,3','0.6');
+  mkL(Math.round(rCX2-Math.cos(r90)*INF),Math.round(rCY2-Math.sin(r90)*INF),Math.round(rCX2+Math.cos(r90)*INF),Math.round(rCY2+Math.sin(r90)*INF),'rgba(167,139,250,0.5)','4,3','0.6');
   ov.appendChild(svg);
   var lb=document.createElement('div');lb.className='rul-rot rul-lbl';lb.style.cssText='position:absolute;left:'+(cx+8)+'px;top:'+(cy-18)+'px;color:'+color+';background:rgba(13,13,20,.85);pointer-events:none;z-index:712;';lb.textContent='↻ '+parseFloat(el.rot).toFixed(1)+'°';ov.appendChild(lb);
 }
-
 // ───────────────────────────────────────────────────────────────
 // §21  SMART GUIDES — sửa dùng getElRect
 // ───────────────────────────────────────────────────────────────
