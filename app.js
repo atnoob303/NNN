@@ -279,19 +279,22 @@ function startScaleHandle(el,pos,e){
   var ox0=r0.x,oy0=r0.y,ow0=r0.w,oh0=r0.h,rotRad=r0.rot*Math.PI/180;
   var fixMap={tl:{lx:ow0/2,ly:oh0/2},tc:{lx:0,ly:oh0/2},tr:{lx:-ow0/2,ly:oh0/2},ml:{lx:ow0/2,ly:0},mr:{lx:-ow0/2,ly:0},bl:{lx:ow0/2,ly:-oh0/2},bc:{lx:0,ly:-oh0/2},br:{lx:-ow0/2,ly:-oh0/2}};
   var fix=fixMap[pos]||{lx:0,ly:0},startCX=ox0+ow0/2,startCY=oy0+oh0/2;
+  var hasRot=Math.abs((el.rot||0)%360)>0.5&&Math.abs(((el.rot||0)%360+360)%360-180)>0.5;
+  // lockAxis: chỉ snap trục nào đang thay đổi
+  var canSnapX=(pos==='tl'||pos==='tr'||pos==='bl'||pos==='br'||pos==='ml'||pos==='mr');
+  var canSnapY=(pos==='tl'||pos==='tr'||pos==='bl'||pos==='br'||pos==='tc'||pos==='bc');
   function mm(ev){
     var dx=ev.clientX-sx,dy=ev.clientY-sy;
     var lx=dx*Math.cos(rotRad)+dy*Math.sin(rotRad),ly=-dx*Math.sin(rotRad)+dy*Math.cos(rotRad);
     var nw=ow0,nh=oh0;
-    if(pos==='tr'||pos==='mr'||pos==='br') nw=Math.max(20,ow0+lx);
-    if(pos==='tl'||pos==='ml'||pos==='bl') nw=Math.max(20,ow0-lx);
-    if(pos==='bl'||pos==='bc'||pos==='br') nh=Math.max(20,oh0+ly);
-    if(pos==='tl'||pos==='tc'||pos==='tr') nh=Math.max(20,oh0-ly);
-    if(pos==='tc'||pos==='bc') nw=ow0;
-    if(pos==='ml'||pos==='mr') nh=oh0;
+    if(pos==='tr'||pos==='mr'||pos==='br')nw=Math.max(20,ow0+lx);
+    if(pos==='tl'||pos==='ml'||pos==='bl')nw=Math.max(20,ow0-lx);
+    if(pos==='bl'||pos==='bc'||pos==='br')nh=Math.max(20,oh0+ly);
+    if(pos==='tl'||pos==='tc'||pos==='tr')nh=Math.max(20,oh0-ly);
+    if(pos==='tc'||pos==='bc')nw=ow0;
+    if(pos==='ml'||pos==='mr')nh=oh0;
     if(ev.shiftKey&&(pos==='tl'||pos==='tr'||pos==='bl'||pos==='br')){
-      var ratio=ow0/oh0;
-      if(nw/nh>ratio)nh=nw/ratio;else nw=nh*ratio;
+      var ratio=ow0/oh0;if(nw/nh>ratio)nh=nw/ratio;else nw=nh*ratio;
       nw=Math.max(20,nw);nh=Math.max(20,nh);
     }
     var sfx=fix.lx*(nw/ow0),sfy=fix.ly*(nh/oh0),ofx=fix.lx,ofy=fix.ly;
@@ -300,14 +303,28 @@ function startScaleHandle(el,pos,e){
     var oldFixWX=startCX+ofx*Math.cos(rotRad)-ofy*Math.sin(rotRad);
     var oldFixWY=startCY+ofx*Math.sin(rotRad)+ofy*Math.cos(rotRad);
     var newCX=startCX+(oldFixWX-newFixWX),newCY=startCY+(oldFixWY-newFixWY);
+    var newX=newCX-nw/2,newY=newCY-nh/2;
+    // snap — chỉ snap trục đang scale, không dịch trục kia
+    var snapRect={x:newX,y:newY,w:nw,h:nh,id:el.id};
+    if(hasRot){
+      var tmpRect={x:newX,y:newY,w:nw,h:nh,id:el.id};
+      _rotSnapScale(tmpRect,el,canSnapX,canSnapY);
+      newX=tmpRect.x;newY=tmpRect.y;
+    } else {
+      var ox=snapRect.x,oy2=snapRect.y;
+      snapGuides(snapRect);
+      if(!canSnapX)snapRect.x=ox;
+      if(!canSnapY)snapRect.y=oy2;
+      newX=snapRect.x;newY=snapRect.y;
+    }
     var savedRot=el.rot;el.rot=0;
-    encodeUDim2(el,newCX-nw/2,newCY-nh/2,nw,nh);
+    encodeUDim2(el,newX,newY,nw,nh);
     el.rot=savedRot;
     renderEl(el);getDescendants(el.id).forEach(renderEl);renderProps();updInfo(el);
     var b=getRotatedBounds(el);
     updateRuler(el);drawResizeGuides(b.x,b.y,b.w,b.h);drawBoundingBox(b.x,b.y,b.w,b.h);drawDistanceGuides(b.x,b.y,b.w,b.h);updateRotGuide(el);
   }
-  function mu(){clearResizeGuides();if(sel){updateRuler(getEl(sel));updateRotGuide(getEl(sel));}document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);}
+  function mu(){clearResizeGuides();clearGuides();if(sel){updateRuler(getEl(sel));updateRotGuide(getEl(sel));}document.removeEventListener('mousemove',mm);document.removeEventListener('mouseup',mu);}
   document.addEventListener('mousemove',mm);document.addEventListener('mouseup',mu);
 }
 // ───────────────────────────────────────────────────────────────
@@ -437,59 +454,89 @@ function snapGuides(el){
 function _rotSnap(el,elObj){
   if(!elObj)return;
   var r=getElRect(elObj),rad=r.rot*Math.PI/180,cos=Math.cos(rad),sin=Math.sin(rad);
-  var hw=r.w/2,hh=r.h/2,cx=r.x+hw,cy=r.y+hh;
-  // 8 điểm của frame đang chọn (world coords)
-  var pts=[
-    {x:cx-cos*hw-(-sin)*hh, y:cy-sin*hw-(cos)*hh},  // tl
-    {x:cx,                   y:cy-sin*hw-(cos)*hh},  // tc — dùng mid top
-    {x:cx+cos*hw-(-sin)*hh, y:cy+sin*hw-(cos)*hh},  // tr
-    {x:cx-cos*hw,            y:cy-sin*hw},            // ml
-    {x:cx+cos*hw,            y:cy+sin*hw},            // mr
-    {x:cx-cos*hw+(-sin)*hh, y:cy-sin*hw+(cos)*hh},  // bl
-    {x:cx,                   y:cy+sin*hw+(cos)*hh},  // bc
-    {x:cx+cos*hw+(-sin)*hh, y:cy+sin*hw+(cos)*hh},  // br
-  ];
-  // fix tính đúng 8 điểm rotated
+  var hw=r.w/2,hh=r.h/2,cx=r.x+r.w/2+( el.x-r.x),cy=r.y+r.h/2+(el.y-r.y);
+  // dùng el.x/el.y làm center hiện tại
+  cx=el.x+el.w/2;cy=el.y+el.h/2;
   var corners=[
     {lx:-hw,ly:-hh},{lx:0,ly:-hh},{lx:hw,ly:-hh},
     {lx:-hw,ly:0},                 {lx:hw,ly:0},
-    {lx:-hw,ly:hh}, {lx:0,ly:hh}, {lx:hw,ly:hh}
+    {lx:-hw,ly:hh},{lx:0,ly:hh},  {lx:hw,ly:hh}
   ];
-  pts=corners.map(function(p){return{x:cx+p.lx*cos-p.ly*sin, y:cy+p.lx*sin+p.ly*cos};});
-  var THRESH=SNAP_THRESHOLD,bestDist=THRESH,bestSnap=null;
+  var pts=corners.map(function(p){return{x:cx+p.lx*cos-p.ly*sin,y:cy+p.lx*sin+p.ly*cos,lx:p.lx,ly:p.ly};});
+  var THRESH=SNAP_THRESHOLD*2,bestDist=THRESH,bestSnap=null;
   els.forEach(function(o){
     if(o.id===elObj.id)return;
     var oRot=((o.rot||0)%360+360)%360;
     if(oRot<0.5||Math.abs(oRot-180)<0.5||oRot>359.5)return;
     var or=getElRect(o),ocx=or.x+or.w/2,ocy=or.y+or.h/2,orad=oRot*Math.PI/180;
     var ocos=Math.cos(orad),osin=Math.sin(orad),or90=orad+Math.PI/2,ohw=or.w/2,ohh=or.h/2;
-    // 4 trục tia tím của frame kia
     var axes=[
-      {px:ocx-Math.cos(or90)*ohh, py:ocy-Math.sin(or90)*ohh, dx:ocos, dy:osin}, // top edge axis
-      {px:ocx+Math.cos(or90)*ohh, py:ocy+Math.sin(or90)*ohh, dx:ocos, dy:osin}, // bot edge axis
-      {px:ocx-ocos*ohw,           py:ocy-osin*ohw,           dx:Math.cos(or90), dy:Math.sin(or90)}, // left edge axis
-      {px:ocx+ocos*ohw,           py:ocy+osin*ohw,           dx:Math.cos(or90), dy:Math.sin(or90)}, // right edge axis
+      {px:ocx-Math.cos(or90)*ohh,py:ocy-Math.sin(or90)*ohh,dx:ocos,dy:osin},
+      {px:ocx+Math.cos(or90)*ohh,py:ocy+Math.sin(or90)*ohh,dx:ocos,dy:osin},
+      {px:ocx-ocos*ohw,          py:ocy-osin*ohw,           dx:Math.cos(or90),dy:Math.sin(or90)},
+      {px:ocx+ocos*ohw,          py:ocy+osin*ohw,           dx:Math.cos(or90),dy:Math.sin(or90)},
     ];
     axes.forEach(function(ax){
       pts.forEach(function(pt){
-        // khoảng cách vuông góc từ pt tới đường thẳng ax
-        var ex2=pt.x-ax.px,ey2=pt.y-ax.py;
-        var dist=Math.abs(ex2*(-ax.dy)+ey2*ax.dx); // cross product = perpendicular dist
+        var ex=pt.x-ax.px,ey=pt.y-ax.py;
+        var dist=Math.abs(ex*(-ax.dy)+ey*ax.dx);
         if(dist<bestDist){
           bestDist=dist;
-          // tính vector cần dịch để snap pt vào trục
-          var proj=ex2*(-ax.dy)+ey2*ax.dx; // signed perp dist
-          bestSnap={dx:-proj*(-ax.dy), dy:-proj*ax.dx, ax:ax, pt:pt};
+          var proj=ex*(-ax.dy)+ey*ax.dx;
+          var sdx=-proj*(-ax.dy),sdy=-proj*ax.dx;
+          bestSnap={dx:sdx,dy:sdy,ax:ax,pt:pt};
+        }
+      });
+    });
+  });
+  if(bestSnap){
+    // snap bằng cách dịch el.x/el.y — giống cách snap xanh
+    el.x+=bestSnap.dx;
+    el.y+=bestSnap.dy;
+    var ax=bestSnap.ax;
+    var wx=bestSnap.pt.x+bestSnap.dx,wy=bestSnap.pt.y+bestSnap.dy;
+    _drawRotSnapGuide(wx,wy,ax.dx,ax.dy);
+  }
+}
+// ───────────────────────────────────────────────────────────────
+function _rotSnapScale(el,elObj,canSnapX,canSnapY){
+  if(!elObj)return;
+  var r=getElRect(elObj),rad=r.rot*Math.PI/180,cos=Math.cos(rad),sin=Math.sin(rad);
+  var hw=r.w/2,hh=r.h/2,cx=el.x+el.w/2,cy=el.y+el.h/2;
+  var corners=[{lx:-hw,ly:-hh},{lx:0,ly:-hh},{lx:hw,ly:-hh},{lx:-hw,ly:0},{lx:hw,ly:0},{lx:-hw,ly:hh},{lx:0,ly:hh},{lx:hw,ly:hh}];
+  var pts=corners.map(function(p){return{x:cx+p.lx*cos-p.ly*sin,y:cy+p.lx*sin+p.ly*cos};});
+  var THRESH=SNAP_THRESHOLD*2,bestDist=THRESH,bestSnap=null;
+  els.forEach(function(o){
+    if(o.id===elObj.id)return;
+    var oRot=((o.rot||0)%360+360)%360;
+    if(oRot<0.5||Math.abs(oRot-180)<0.5||oRot>359.5)return;
+    var or=getElRect(o),ocx=or.x+or.w/2,ocy=or.y+or.h/2,orad=oRot*Math.PI/180;
+    var ocos=Math.cos(orad),osin=Math.sin(orad),or90=orad+Math.PI/2,ohw=or.w/2,ohh=or.h/2;
+    var axes=[
+      {px:ocx-Math.cos(or90)*ohh,py:ocy-Math.sin(or90)*ohh,dx:ocos,dy:osin},
+      {px:ocx+Math.cos(or90)*ohh,py:ocy+Math.sin(or90)*ohh,dx:ocos,dy:osin},
+      {px:ocx-ocos*ohw,py:ocy-osin*ohw,dx:Math.cos(or90),dy:Math.sin(or90)},
+      {px:ocx+ocos*ohw,py:ocy+osin*ohw,dx:Math.cos(or90),dy:Math.sin(or90)},
+    ];
+    axes.forEach(function(ax){
+      pts.forEach(function(pt){
+        var ex2=pt.x-ax.px,ey2=pt.y-ax.py;
+        var dist=Math.abs(ex2*(-ax.dy)+ey2*ax.dx);
+        if(dist<bestDist){
+          bestDist=dist;
+          var proj=ex2*(-ax.dy)+ey2*ax.dx;
+          var sdx=-proj*(-ax.dy),sdy=-proj*ax.dx;
+          // chỉ giữ trục được phép snap
+          if(!canSnapX)sdx=0;
+          if(!canSnapY)sdy=0;
+          bestSnap={dx:sdx,dy:sdy,ax:ax,pt:pt};
         }
       });
     });
   });
   if(bestSnap){
     el.x+=bestSnap.dx;el.y+=bestSnap.dy;
-    // vẽ tia trắng dọc theo trục snap
-    var ax=bestSnap.ax,INF=9999;
-    var wx=bestSnap.pt.x+bestSnap.dx,wy=bestSnap.pt.y+bestSnap.dy;
-    // tia trắng đi qua điểm snap theo hướng vuông góc với trục (tức là song song trục kia)
+    var ax=bestSnap.ax,wx=bestSnap.pt.x+bestSnap.dx,wy=bestSnap.pt.y+bestSnap.dy;
     _drawRotSnapGuide(wx,wy,ax.dx,ax.dy);
   }
 }
@@ -502,8 +549,9 @@ function _drawRotSnapGuide(x,y,dx,dy){
   var l=document.createElementNS('http://www.w3.org/2000/svg','line');
   l.setAttribute('x1',Math.round(x-dx*INF));l.setAttribute('y1',Math.round(y-dy*INF));
   l.setAttribute('x2',Math.round(x+dx*INF));l.setAttribute('y2',Math.round(y+dy*INF));
-  l.setAttribute('stroke','rgba(255,255,255,0.75)');l.setAttribute('stroke-width','1');
-  l.setAttribute('stroke-dasharray','5,3');l.setAttribute('opacity','0.9');
+  l.setAttribute('stroke','rgba(255,255,255,0.95)');
+  l.setAttribute('stroke-width','1.5');
+  l.setAttribute('opacity','1');
   g.appendChild(l);cv.appendChild(g);_guideLines.push(g);
 }
 // ───────────────────────────────────────────────────────────────
