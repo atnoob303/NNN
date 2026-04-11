@@ -120,13 +120,23 @@ var DEFS = {
     txt:'Button', tc:{r:255,g:255,b:255}, tsz:14,
     fn:'GothamBold', txa:'Center', tya:'Center',
     tw:false, abc:true, modal:false,
+    // ── Gooey params (base — auto scale theo button size) ──
+    btnFx:      'none',
+    btnFxCount: 15,    // base số hạt
+    btnFxDist:  90,    // base tầm bay (px)
+    btnFxSpeed: 1200,  // tốc độ (ms)
   },
-  ImageButton: {
+ ImageButton: {
     ...mkU(0,40,0,50,0,100,0,100),
     bc:{r:244,g:114,b:182}, bdc:{r:251,g:113,b:133}, bdw:0, cr:8,
     op:1, zi:0, vis:true, rot:0, mods:{},
     img:'rbxassetid://0', ic:{r:255,g:255,b:255},
     st:'Stretch', it:0, abc:true, modal:false,
+    // ── Gooey params ──
+    btnFx:      'none',
+    btnFxCount: 15,
+    btnFxDist:  90,
+    btnFxSpeed: 1200,
   },
 
   // ── MỚI: TextBox ────────────────────────────────────────────
