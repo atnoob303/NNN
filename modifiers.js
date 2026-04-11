@@ -187,12 +187,50 @@ function renderPropsExtra(el, id) {
     );
   }
 
-  // ── Button Click Effect ──────────────────────────────────────
+// ── Button Click Effect ──────────────────────────────────────
   if (el.type === 'TextButton' || el.type === 'ImageButton') {
     var curFx = el.btnFx || 'none';
+    var fxParams = '';
+
+    if (curFx === 'bounce') {
+      fxParams =
+        '<div class="pr" style="font-size:9px;color:var(--tx3)">' +
+        '↔ Bounce tự scale theo kích thước button</div>';
+    }
+
+    if (curFx === 'ripple') {
+      fxParams =
+        modNr(id, 'Speed (ms)', 'btnFxSpeed', 200, 1000, el.btnFxSpeed||1200);
+    }
+
+    if (curFx === 'particle') {
+      // Tính preview auto params để hiển thị cho user biết
+      var domEl  = document.getElementById(el.id);
+      var btnW   = domEl ? domEl.offsetWidth  : (el.soW || 120);
+      var btnH   = domEl ? domEl.offsetHeight : (el.soH || 36);
+      var area   = btnW * btnH;
+      var ref    = 120 * 36;
+      var ratio  = Math.sqrt(area / ref);
+      ratio      = Math.max(0.5, Math.min(ratio, 4));
+      var autoCount = Math.max(6,  Math.min(Math.round((el.btnFxCount||15) * ratio), 40));
+      var autoDist  = Math.max(30, Math.min(Math.round((el.btnFxDist||90)  * (Math.max(btnW,btnH)/120)), 300));
+      var autoSize  = Math.max(8,  Math.min(Math.round(18 * Math.sqrt(ratio)), 40));
+
+      fxParams =
+        modNr(id, 'Base hạt',   'btnFxCount', 5,    30,   el.btnFxCount||15) +
+        modNr(id, 'Base tầm bay','btnFxDist',  20,   200,  el.btnFxDist||90)  +
+        modNr(id, 'Tốc độ (ms)','btnFxSpeed', 400,  2000, el.btnFxSpeed||1200) +
+        '<div class="pr" style="flex-direction:column;align-items:flex-start;gap:2px">' +
+          '<span class="pl" style="color:var(--cy);font-size:9px">⚡ Auto (button ' + Math.round(btnW) + '×' + Math.round(btnH) + 'px)</span>' +
+          '<span style="font-size:9px;color:var(--tx3)">Hạt: ' + autoCount + '  •  Tầm: ' + autoDist + 'px  •  Size: ' + autoSize + 'px</span>' +
+        '</div>' +
+        '<div class="pr" style="font-size:9px;color:var(--cy)">🎨 Hạt chuyển về màu nút khi thu vào</div>';
+    }
+
     h += modSec('🎯 Click Effect',
       modSelect(id, 'Effect', 'btnFx',
         ['none','bounce','ripple','particle'], curFx) +
+      fxParams +
       '<div class="pr"><span class="pl">Preview</span>' +
       '<button class="tbtn cy" style="flex:1;font-size:10px" ' +
       'onclick="fxBtnPreview(\'' + id + '\')">▶ Run Preview</button></div>'
