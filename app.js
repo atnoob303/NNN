@@ -256,6 +256,15 @@ function renderEl(el){
     selEl(el.id,false);startDrag(el,e);
   };
   d.onclick=function(e){e.stopPropagation();};
+  // ── Click effect preview (tool sel + là button) ──────────────
+  d.addEventListener('click', function(evt) {
+    if (tool !== 'sel') return;
+    var e = getEl(el.id);
+    if (!e) return;
+    if (e.type !== 'TextButton' && e.type !== 'ImageButton') return;
+    if (!e.btnFx || e.btnFx === 'none') return;
+    fxBtnClick(el.id, e.btnFx, evt);
+  });
 
   // ── Fade in nếu element mới tạo ─────────────────────────────
   if(isNew) fxFadeIn(el.id);
