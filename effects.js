@@ -235,3 +235,148 @@ function fxToggle(key) {
     toast('FX.' + key + ' = ' + FX[key]);
   }
 }
+
+// ════════════════════════════════════════════════════════════════
+// §FX-9  CLICK EFFECTS cho Button (Bounce / Ripple / Particle)
+// ════════════════════════════════════════════════════════════════
+
+// ── CSS cho click effects (inject thêm vào fx-styles) ───────────
+(function injectClickFxStyles() {
+  var s = document.createElement('style');
+  s.id = 'click-fx-styles';
+  s.textContent = `
+    /* Bounce */
+    @keyframes fx-btn-bounce {
+      0%   { transform: scale(1)    rotate(var(--rot,0deg)); }
+      30%  { transform: scale(0.88) rotate(var(--rot,0deg)); }
+      65%  { transform: scale(1.08) rotate(var(--rot,0deg)); }
+      85%  { transform: scale(0.97) rotate(var(--rot,0deg)); }
+      100% { transform: scale(1)    rotate(var(--rot,0deg)); }
+    }
+    .fx-btn-bounce {
+      animation: fx-btn-bounce 0.38s cubic-bezier(0.34,1.56,0.64,1) both;
+    }
+
+    /* Ripple container */
+    .fx-ripple-wrap {
+      position: absolute; inset: 0;
+      overflow: hidden; border-radius: inherit;
+      pointer-events: none;
+    }
+    .fx-ripple-circle {
+      position: absolute;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.45);
+      transform: scale(0);
+      animation: fx-ripple-anim 0.55s ease-out forwards;
+      pointer-events: none;
+    }
+    @keyframes fx-ripple-anim {
+      to { transform: scale(4); opacity: 0; }
+    }
+
+    /* Particle dot */
+    .fx-particle-dot {
+      position: absolute;
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      pointer-events: none;
+      animation: fx-particle-fly var(--pt, 600ms) ease-out forwards;
+      top: calc(50% - 3.5px);
+      left: calc(50% - 3.5px);
+    }
+    @keyframes fx-particle-fly {
+      0%   { transform: translate(0,0) scale(1); opacity: 1; }
+      100% { transform: translate(var(--px,0px), var(--py,0px)) scale(0); opacity: 0; }
+    }
+  `;
+  document.head.appendChild(s);
+})();
+
+// ── CLICK EFFECT REGISTRY ────────────────────────────────────────
+var BTN_EFFECTS = {
+  none:     { label: 'None' },
+  bounce:   { label: '🏀 Bounce' },
+  ripple:   { label: '💧 Ripple' },
+  particle: { label: '✨ Particle' },
+};
+
+/**
+ * Chạy click effect trên DOM element của button.
+ * @param {string} id       - element id
+ * @param {string} effect   - 'bounce' | 'ripple' | 'particle'
+ * @param {Event}  [evt]    - MouseEvent (dùng cho ripple offset)
+ */
+function fxBtnClick(id, effect, evt) {
+  var d = document.getElementById(id);
+  if (!d || !effect || effect === 'none') return;
+
+  if (effect === 'bounce') {
+    d.classList.remove('fx-btn-bounce');
+    void d.offsetWidth;
+    d.classList.add('fx-btn-bounce');
+    d.addEventListener('animationend', function h() {
+      d.classList.remove('fx-btn-bounce');
+      d.removeEventListener('animationend', h);
+    });
+  }
+
+  if (effect === 'ripple') {
+    // Xóa wrap cũ nếu có
+    var oldWrap = d.querySelector('.fx-ripple-wrap');
+    if (oldWrap) oldWrap.remove();
+
+    var wrap = document.createElement('div');
+    wrap.className = 'fx-ripple-wrap';
+
+    var rect = d.getBoundingClientRect();
+    var cx = evt ? evt.clientX - rect.left : rect.width / 2;
+    var cy = evt ? evt.clientY - rect.top  : rect.height / 2;
+    var size = Math.max(rect.width, rect.height) * 0.9;
+
+    var circle = document.createElement('div');
+    circle.className = 'fx-ripple-circle';
+    circle.style.cssText = 'width:' + size + 'px;height:' + size + 'px;'
+      + 'left:' + (cx - size/2) + 'px;top:' + (cy - size/2) + 'px;';
+
+    wrap.appendChild(circle);
+    d.appendChild(wrap);
+
+    circle.addEventListener('animationend', function() { wrap.remove(); });
+  }
+
+  if (effect === 'particle') {
+    var COLORS = ['#7c6af7','#f472b6','#22d3ee','#fbbf24','#4ade80','#fb7185'];
+    var COUNT  = 10;
+    for (var i = 0; i < COUNT; i++) {
+      (function(i) {
+        var dot = document.createElement('div');
+        dot.className = 'fx-particle-dot';
+        var angle  = (360 / COUNT) * i + (Math.random() - 0.5) * 30;
+        var dist   = 28 + Math.random() * 28;
+        var rad    = angle * Math.PI / 180;
+        var px     = Math.cos(rad) * dist;
+        var py     = Math.sin(rad) * dist;
+        var dur    = 480 + Math.random() * 200;
+        var col    = COLORS[Math.floor(Math.random() * COLORS.length)];
+        dot.style.cssText = '--px:' + px + 'px;--py:' + py + 'px;--pt:' + dur + 'ms;'
+          + 'background:' + col + ';';
+        d.appendChild(dot);
+        setTimeout(function() { if (dot.parentNode) dot.parentNode.removeChild(dot); }, dur + 50);
+      })(i);
+    }
+  }
+}
+
+/**
+ * Gọi từ Properties panel — nút Preview effect.
+ * @param {string} id
+ */
+function fxBtnPreview(id) {
+  var el = (typeof getEl === 'function') ? getEl(id) : null;
+  if (!el) return;
+  var effect = el.btnFx || 'none';
+  if (effect === 'none') { toast('⚠ Chưa chọn hiệu ứng!'); return; }
+  fxBtnClick(id, effect);
+  toast('▶ Preview: ' + BTN_EFFECTS[effect].label);
+}
