@@ -195,33 +195,10 @@ function buildLua() {
              + '\ttask.delay(0.55, function() overlay:Destroy() end)\n'
              + 'end)\n';
 
-      } else if (fx === 'particle') {
-        out += '\n-- Particle effect\n'
-             + ts
-             + 'local particleColors_' + vn + ' = {'
-             + 'Color3.fromRGB(124,106,247),Color3.fromRGB(244,114,182),'
-             + 'Color3.fromRGB(34,211,238),Color3.fromRGB(251,191,36)}\n'
-             + vn + '.MouseButton1Click:Connect(function()\n'
-             + '\tfor i = 1, 10 do\n'
-             + '\t\tlocal dot = Instance.new("Frame")\n'
-             + '\t\tdot.Size = UDim2.new(0,7,0,7)\n'
-             + '\t\tdot.AnchorPoint = Vector2.new(0.5,0.5)\n'
-             + '\t\tdot.Position = UDim2.new(0.5,0,0.5,0)\n'
-             + '\t\tdot.BackgroundColor3 = particleColors_' + vn + '[math.random(#particleColors_' + vn + ')]\n'
-             + '\t\tdot.BorderSizePixel = 0\n'
-             + '\t\tdot.ZIndex = ' + ((el.zi||0)+2) + '\n'
-             + '\t\tlocal rc = Instance.new("UICorner") rc.CornerRadius = UDim.new(1,0) rc.Parent = dot\n'
-             + '\t\tdot.Parent = ' + vn + '\n'
-             + '\t\tlocal angle = math.rad((360/10)*i + math.random(-15,15))\n'
-             + '\t\tlocal dist = math.random(28,56)\n'
-             + '\t\tlocal tx = math.cos(angle)*dist\n'
-             + '\t\tlocal ty = math.sin(angle)*dist\n'
-             + '\t\tTweenService:Create(dot, TweenInfo.new(0.55, Enum.EasingStyle.Quad),'
-             + ' {Position = UDim2.new(0.5,tx,0.5,ty), BackgroundTransparency = 1}):Play()\n'
-             + '\t\ttask.delay(0.6, function() dot:Destroy() end)\n'
-             + '\tend\n'
-             + 'end)\n';
-
+     } else if (fx === 'particle') {
+        out += '\n-- 🫧 Gooey Particle: hiệu ứng web-only, không export Lua\n'
+             + '-- Dùng effect này trong HTML export, không hỗ trợ Roblox Studio\n'
+             + vn + '.MouseButton1Click:Connect(function()\n\t-- TODO: thêm hiệu ứng tùy chỉnh\nend)\n';
       } else {
         out += '\n' + vn + '.MouseButton1Click:Connect(function()\n\t-- TODO\nend)\n';
       }
