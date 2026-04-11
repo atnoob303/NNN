@@ -30,7 +30,8 @@
   </div>
   <button class="tbtn" id="btn-ruler" onclick="toggleRuler()" title="Bật/tắt số đo">📏 Ruler</button>
   <button class="tbtn active" id="btn-distguide" onclick="toggleDistGuide()" title="Tia khoảng cách">📐 Dist</button>
-  <div class="sep"></div>
+  <button class="tbtn" onclick="neOpen()">⬡ Nodes</button>
+<div class="sep"></div>
   <button class="tbtn rd" onclick="clearAll()">✕ Clear</button>
   <button class="tbtn yw" onclick="showExport()">⬇ Export Lua</button>
   <span id="cinfo" style="margin-left:auto;font-size:9px;color:var(--tx3);font-family:'JetBrains Mono',monospace"></span>
@@ -98,5 +99,6 @@
 <script src="modifiers.js"></script>
 <script src="codegen.js"></script>
 <script src="app.js"></script>
+<script src="node_editor.js"></script>
 </body>
 </html>
