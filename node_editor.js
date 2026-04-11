@@ -1,7 +1,6 @@
 // ═══════════════════════════════════════════════════════════════
-// node_editor.js — Node Editor overlay (physics rope)
+// node_editor.js v2 — Auto-sync, toggle on/off, live watch
 // Load SAU app.js
-// Fix: pointer-events không chặn canvas, drag/rotate/resize vẫn hoạt động
 // ═══════════════════════════════════════════════════════════════
 
 (function () {
@@ -16,6 +15,8 @@
     edges: [],
     nodeEls: {},
     animId: null,
+    watchId: null,       // setInterval auto-sync
+    lastElsHash: '',     // hash để detect thay đổi
     conn: null,
     drag: null,
     dragOff: { x: 0, y: 0 },
@@ -63,6 +64,32 @@
   };
   function nc(type) { return NCOLORS[type] || { col: '#888780', tag: 'Node' }; }
 
+  // ── HASH — detect thay đổi els[] ─────────────────────────────
+  function _hashEls() {
+    if (!window.els || !window.els.length) return '';
+    return window.els.map(function (e) {
+      return e.id + '|' + e.type + '|' + e.name + '|' + (e.parentId || '') + '|'
+        + Object.keys(e.mods || {}).join(',') + '|'
+        + e.psX + ',' + e.psY + ',' + e.soW + ',' + e.soH;
+    }).join(';');
+  }
+
+  // ── AUTO WATCH ───────────────────────────────────────────────
+  function _startWatch() {
+    if (NE.watchId) return;
+    NE.watchId = setInterval(function () {
+      if (!NE.open) return;
+      var h = _hashEls();
+      if (h !== NE.lastElsHash) {
+        NE.lastElsHash = h;
+        _syncNodes();      // chỉ sync nodes/edges, không re-layout node đang drag
+      }
+    }, 400);  // check mỗi 400ms
+  }
+  function _stopWatch() {
+    if (NE.watchId) { clearInterval(NE.watchId); NE.watchId = null; }
+  }
+
   // ── DOM SETUP ────────────────────────────────────────────────
   function buildDOM() {
     if (NE.domBuilt) return true;
@@ -72,27 +99,29 @@
     var style = document.createElement('style');
     style.id = 'ne-style';
     style.textContent =
-      // ★ QUAN TRỌNG: toàn bộ overlay pointer-events:none
-      // Chỉ toolbar và .ne-nd mới có pointer-events:auto
       '#ne-overlay{position:absolute;inset:0;z-index:200;display:none;flex-direction:column;pointer-events:none}'
       +'#ne-overlay.open{display:flex}'
       +'#ne-toolbar{pointer-events:auto;display:flex;gap:5px;align-items:center;padding:5px 10px;'
-        +'background:rgba(10,10,20,.94);border-bottom:1px solid rgba(255,255,255,.08);flex-shrink:0}'
-      +'#ne-toolbar .ne-logo{font-size:10px;font-weight:700;color:#a78bfa;margin-right:4px}'
+        +'background:rgba(10,10,22,.95);border-bottom:1px solid rgba(255,255,255,.08);flex-shrink:0}'
+      +'#ne-toolbar .ne-logo{font-size:10px;font-weight:700;color:#a78bfa;margin-right:6px}'
+      +'#ne-live-dot{width:6px;height:6px;border-radius:50%;background:#4ade80;'
+        +'box-shadow:0 0 4px #4ade80;animation:ne-pulse 1.4s ease-in-out infinite;flex-shrink:0}'
+      +'@keyframes ne-pulse{0%,100%{opacity:1}50%{opacity:.3}}'
+      +'#ne-count{font-size:9px;color:rgba(226,226,240,.35);margin-right:4px}'
       +'.ne-tb{font-size:10px;padding:2px 8px;border:1px solid rgba(255,255,255,.13);border-radius:4px;'
         +'background:rgba(255,255,255,.04);color:#e2e2f0;cursor:pointer;transition:background .12s}'
       +'.ne-tb:hover{background:rgba(255,255,255,.1)}'
       +'.ne-tb.on{background:#7c6af7;border-color:#7c6af7;color:#fff}'
-      // canvas wrap: pointer-events:none — KHÔNG chặn canvas gốc bên dưới
       +'#ne-canvas-wrap{position:relative;flex:1;overflow:hidden;pointer-events:none}'
       +'#ne-cv{position:absolute;inset:0;pointer-events:none;z-index:1}'
-      // node card: pointer-events:auto — CHỈ node bắt event
       +'.ne-nd{position:absolute;border-radius:8px;border:1.5px solid;cursor:grab;user-select:none;'
-        +'z-index:10;min-width:128px;max-width:192px;box-sizing:border-box;'
+        +'z-index:10;min-width:130px;max-width:194px;box-sizing:border-box;'
         +'transition:box-shadow .12s,opacity .18s;pointer-events:auto}'
       +'.ne-nd:active{cursor:grabbing}'
       +'.ne-nd.ne-sel{box-shadow:0 0 0 2px rgba(255,255,255,.1),0 0 0 4px var(--ne-col,#7c6af7)}'
-      +'.ne-nd.ne-dim{opacity:0.08;pointer-events:none}'
+      +'.ne-nd.ne-dim{opacity:0.07;pointer-events:none}'
+      +'.ne-nd.ne-new{animation:ne-pop .25s cubic-bezier(.34,1.56,.64,1)}'
+      +'@keyframes ne-pop{from{transform:scale(.7);opacity:0}to{transform:scale(1);opacity:1}}'
       +'.ne-nh{font-size:10px;font-weight:600;padding:5px 8px 4px;'
         +'border-bottom:1px solid rgba(255,255,255,.07);display:flex;align-items:center;gap:5px;border-radius:6px 6px 0 0}'
       +'.ne-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}'
@@ -100,7 +129,7 @@
       +'.ne-tag{font-size:8px;padding:1px 5px;border-radius:3px;font-weight:400;flex-shrink:0}'
       +'.ne-nb{padding:3px 8px 6px;font-size:9px;color:rgba(226,226,240,.5)}'
       +'.ne-pr{display:flex;justify-content:space-between;margin:1.5px 0;gap:6px;overflow:hidden}'
-      +'.ne-pk{flex-shrink:0;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.55}'
+      +'.ne-pk{flex-shrink:0;max-width:82px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.55}'
       +'.ne-pv{font-family:monospace;font-size:8.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}'
       +'.ne-port{width:10px;height:10px;border-radius:50%;border:2px solid;position:absolute;'
         +'top:50%;transform:translateY(-50%);cursor:crosshair;z-index:11;transition:transform .1s}'
@@ -108,7 +137,7 @@
       +'.ne-po{right:-5px}'
       +'.ne-pi{left:-5px}'
       +'#ne-legend{position:absolute;bottom:8px;right:10px;font-size:8.5px;'
-        +'color:rgba(226,226,240,.2);pointer-events:none;line-height:1.8}';
+        +'color:rgba(226,226,240,.18);pointer-events:none;line-height:1.8}';
     document.head.appendChild(style);
 
     var overlay = document.createElement('div');
@@ -117,28 +146,36 @@
     // Toolbar
     var tb = document.createElement('div');
     tb.id = 'ne-toolbar';
+
     var logo = document.createElement('span');
     logo.className = 'ne-logo';
-    logo.textContent = '\u29C1 Node Editor';
+    logo.textContent = '\u29C1 Nodes';
     tb.appendChild(logo);
-    var btnAll  = _mkBtn('Show all', 'on', function () { neSetMode('all'); });
+
+    // Live indicator
+    var dot = document.createElement('span'); dot.id = 'ne-live-dot'; dot.title = 'Live sync';
+    tb.appendChild(dot);
+    var cnt = document.createElement('span'); cnt.id = 'ne-count';
+    tb.appendChild(cnt);
+
+    // Mode buttons
+    var btnAll = _mkBtn('Show all', 'on', function () { neSetMode('all'); });
     btnAll.id = 'ne-btn-all';
-    var btnSel  = _mkBtn('Selected', '', function () { neSetMode('selected'); });
+    var btnSel = _mkBtn('Selected', '', function () { neSetMode('selected'); });
     btnSel.id = 'ne-btn-sel';
-    var btnSync = _mkBtn('\u21BA Sync', '', function () { neSync(); });
-    var btnClose= _mkBtn('\u2715 Close', '', function () { neClose(); });
-    btnClose.style.marginLeft = 'auto';
     tb.appendChild(btnAll); tb.appendChild(btnSel);
-    tb.appendChild(btnSync); tb.appendChild(btnClose);
+
+    // Close — margin-left:auto đẩy sang phải
+    var btnClose = _mkBtn('\u2715 Close', '', function () { neToggle(); });
+    btnClose.style.marginLeft = 'auto';
+    tb.appendChild(btnClose);
 
     // Canvas wrap
     var wrap = document.createElement('div');
     wrap.id = 'ne-canvas-wrap';
-    var cv = document.createElement('canvas');
-    cv.id = 'ne-cv';
+    var cv = document.createElement('canvas'); cv.id = 'ne-cv';
     wrap.appendChild(cv);
-    var legend = document.createElement('div');
-    legend.id = 'ne-legend';
+    var legend = document.createElement('div'); legend.id = 'ne-legend';
     legend.innerHTML = '&#9473; parent&#8594;child &nbsp; &#x254C; modifier/effect';
     wrap.appendChild(legend);
 
@@ -146,25 +183,18 @@
     overlay.appendChild(wrap);
     ca.appendChild(overlay);
 
-    NE.wrap = wrap;
-    NE.cv   = cv;
-    NE.ctx  = cv.getContext('2d');
+    NE.wrap = wrap; NE.cv = cv; NE.ctx = cv.getContext('2d');
     NE.domBuilt = true;
 
-    // ★ Dùng capture phase để nhận trước app.js
-    // Guard: chỉ xử lý khi NE.drag hoặc NE.conn active — không can thiệp còn lại
     document.addEventListener('mousemove', _onMouseMove, true);
     document.addEventListener('mouseup',   _onMouseUp,   true);
-
     return true;
   }
 
   function _mkBtn(label, cls, fn) {
     var b = document.createElement('button');
     b.className = 'ne-tb' + (cls ? ' ' + cls : '');
-    b.textContent = label;
-    b.onclick = fn;
-    return b;
+    b.textContent = label; b.onclick = fn; return b;
   }
 
   // ── AUTO LAYOUT ──────────────────────────────────────────────
@@ -177,16 +207,12 @@
       else if (t === 'Container' || t === '3D')  cols.main.push(n);
       else                                       cols.child.push(n);
     });
-    var W = NE.wrap ? NE.wrap.offsetWidth  : 800;
     var H = NE.wrap ? NE.wrap.offsetHeight : 500;
-    var PAD = 24, GAP = 16, NH = 108, colW = 198;
+    var PAD = 24, GAP = 14, NH = 108, colW = 200;
     function layoutCol(arr, startX) {
       var total = arr.length * (NH + GAP) - GAP;
       var sy = Math.max(PAD, (H - total) / 2);
-      arr.forEach(function (n, i) {
-        n.x = startX;
-        n.y = sy + i * (NH + GAP);
-      });
+      arr.forEach(function (n, i) { n.x = startX; n.y = sy + i * (NH + GAP); });
     }
     layoutCol(cols.mod,   PAD);
     layoutCol(cols.main,  PAD + colW);
@@ -195,19 +221,19 @@
   }
 
   // ── NODE ELEMENT ─────────────────────────────────────────────
-  function _makeNodeEl(n) {
+  function _makeNodeEl(n, isNew) {
     var old = document.getElementById('ne-nd-' + n.id);
     if (old) old.remove();
     var s = nc(n.type), col = s.col;
     var el = document.createElement('div');
-    el.className = 'ne-nd';
+    el.className = 'ne-nd' + (isNew ? ' ne-new' : '');
     el.id = 'ne-nd-' + n.id;
     el.style.cssText = 'left:' + Math.round(n.x) + 'px;top:' + Math.round(n.y) + 'px;'
       + 'border-color:' + col + ';background:' + col + '12;';
     el.style.setProperty('--ne-col', col);
 
-    var hdr = document.createElement('div');
-    hdr.className = 'ne-nh'; hdr.style.color = col;
+    // Header
+    var hdr = document.createElement('div'); hdr.className = 'ne-nh'; hdr.style.color = col;
     var dot = document.createElement('span'); dot.className = 'ne-dot'; dot.style.background = col;
     var lbl = document.createElement('span'); lbl.className = 'ne-lbl';
     lbl.title = n.label; lbl.textContent = n.isMod ? n.modKey : n.label;
@@ -216,12 +242,12 @@
     tag.style.cssText = 'background:' + col + '20;color:' + col;
     hdr.appendChild(dot); hdr.appendChild(lbl); hdr.appendChild(tag);
 
-    var body = document.createElement('div');
-    body.className = 'ne-nb';
+    // Body
+    var body = document.createElement('div'); body.className = 'ne-nb';
     var props = n.props || {}, keys = Object.keys(props).slice(0, 5);
     if (!keys.length) {
       var emp = document.createElement('div');
-      emp.style.cssText = 'font-size:8.5px;opacity:.22;padding:2px 0';
+      emp.style.cssText = 'font-size:8.5px;opacity:.2;padding:2px 0';
       emp.textContent = '(no props)'; body.appendChild(emp);
     } else {
       keys.forEach(function (k) {
@@ -233,16 +259,14 @@
       });
     }
 
-    var portIn = document.createElement('div');
-    portIn.className = 'ne-port ne-pi';
+    // Ports
+    var portIn = document.createElement('div'); portIn.className = 'ne-port ne-pi';
     portIn.style.cssText = 'background:' + col + ';border-color:' + col + '50';
-    var portOut = document.createElement('div');
-    portOut.className = 'ne-port ne-po';
+    var portOut = document.createElement('div'); portOut.className = 'ne-port ne-po';
     var oc = n.isMod ? col : '#f97316';
     portOut.style.cssText = 'background:' + oc + ';border-color:' + oc + '50';
 
-    el.appendChild(portIn); el.appendChild(hdr);
-    el.appendChild(body); el.appendChild(portOut);
+    el.appendChild(portIn); el.appendChild(hdr); el.appendChild(body); el.appendChild(portOut);
     NE.wrap.appendChild(el);
     NE.nodeEls[n.id] = el;
 
@@ -252,8 +276,7 @@
     });
     portIn.addEventListener('mouseup', function (e) {
       if (NE.conn && NE.conn.fromId !== n.id) {
-        _addEdge(NE.conn.fromId, n.id, false);
-        NE.conn = null;
+        _addEdge(NE.conn.fromId, n.id, false); NE.conn = null;
       }
       e.stopPropagation();
     });
@@ -277,8 +300,7 @@
   }
   function _findNode(id) { return NE.nodes.find(function (n) { return n.id === id; }); }
   function _initRope(e) {
-    var fn = _findNode(e.fromId), tn = _findNode(e.toId);
-    if (!fn || !tn) return;
+    var fn = _findNode(e.fromId), tn = _findNode(e.toId); if (!fn || !tn) return;
     var a = _portPos(fn, 'out'), b = _portPos(tn, 'in');
     e.rope = [];
     for (var i = 0; i <= SEG; i++) {
@@ -296,8 +318,7 @@
   function _simRopes() {
     NE.edges.forEach(function (e) {
       if (!e.rope || e.rope.length < 2) return;
-      var fn = _findNode(e.fromId), tn = _findNode(e.toId);
-      if (!fn || !tn) return;
+      var fn = _findNode(e.fromId), tn = _findNode(e.toId); if (!fn || !tn) return;
       var a = _portPos(fn, 'out'), b = _portPos(tn, 'in');
       e.rope[0].x = a.x; e.rope[0].y = a.y;
       e.rope[SEG].x = b.x; e.rope[SEG].y = b.y;
@@ -339,13 +360,12 @@
     ctx.clearRect(0, 0, NE.cv.width, NE.cv.height);
     NE.edges.forEach(function (e) {
       if (!e.rope || e.rope.length < 2) return;
-      var fn = _findNode(e.fromId), tn = _findNode(e.toId);
-      if (!fn || !tn) return;
+      var fn = _findNode(e.fromId), tn = _findNode(e.toId); if (!fn || !tn) return;
       if (NE.mode === 'selected' && NE.selId && !_isRelated(fn.id) && !_isRelated(tn.id)) return;
       var isSel = NE.selId && (e.fromId === NE.selId || e.toId === NE.selId);
       var col = e.isMod ? nc(fn.type).col : '#f97316';
       ctx.save();
-      ctx.globalAlpha = isSel ? .92 : .32;
+      ctx.globalAlpha = isSel ? .92 : .3;
       ctx.lineWidth = isSel ? 2 : 1;
       ctx.lineCap = 'round'; ctx.lineJoin = 'round';
       ctx.strokeStyle = col;
@@ -355,7 +375,7 @@
       for (var i = 1; i < e.rope.length; i++) ctx.lineTo(e.rope[i].x, e.rope[i].y);
       ctx.stroke();
       if (isSel) {
-        ctx.globalAlpha = .11; ctx.lineWidth = 8; ctx.setLineDash([]);
+        ctx.globalAlpha = .10; ctx.lineWidth = 8; ctx.setLineDash([]);
         ctx.beginPath();
         ctx.moveTo(e.rope[0].x, e.rope[0].y);
         for (var i = 1; i < e.rope.length; i++) ctx.lineTo(e.rope[i].x, e.rope[i].y);
@@ -369,8 +389,7 @@
         var a = _portPos(fn, 'out');
         var wr = NE.wrap.getBoundingClientRect();
         var mx = NE.conn.mx - wr.left, my = NE.conn.my - wr.top;
-        ctx.save();
-        ctx.setLineDash([5, 5]); ctx.globalAlpha = .6;
+        ctx.save(); ctx.setLineDash([5, 5]); ctx.globalAlpha = .6;
         ctx.lineWidth = 1.5; ctx.strokeStyle = '#f97316';
         ctx.beginPath(); ctx.moveTo(a.x, a.y);
         ctx.bezierCurveTo(a.x + 60, a.y, mx - 60, my, mx, my);
@@ -385,13 +404,15 @@
   }
 
   // ── SYNC ─────────────────────────────────────────────────────
+  // Full sync — dùng lần đầu hoặc khi số node thay đổi nhiều
   function neSync() {
     if (!NE.open) return;
     Object.keys(NE.nodeEls).forEach(function (k) {
       var el = NE.nodeEls[k]; if (el && el.parentNode) el.remove();
     });
     NE.nodeEls = {}; NE.nodes = []; NE.edges = [];
-    if (!window.els || !window.els.length) return;
+    if (!window.els || !window.els.length) { _updateCount(); return; }
+
     window.els.forEach(function (el) {
       NE.nodes.push({ id: el.id, type: el.type, label: el.name || el.type,
         x: 0, y: 0, vx: 0, vy: 0, props: _extractProps(el), isMod: false });
@@ -402,14 +423,110 @@
           isMod: true, modKey: mk, parentElId: el.id });
       });
     });
+
     _autoLayout(NE.nodes);
-    NE.nodes.forEach(function (n) { _makeNodeEl(n); });
-    window.els.forEach(function (el) {
-      if (el.parentId) _addEdge(el.parentId, el.id, false);
-      var mods = el.mods || {};
-      Object.keys(mods).forEach(function (mk) { _addEdge(el.id + '__mod__' + mk, el.id, true); });
-    });
+    NE.nodes.forEach(function (n) { _makeNodeEl(n, false); });
+    _buildEdges();
+    _updateCount();
     neUpdateVis();
+  }
+
+  // Smart sync — chỉ thêm/xóa node thay đổi, giữ vị trí node cũ
+  function _syncNodes() {
+    if (!NE.open) return;
+
+    // Build danh sách node mới từ els[]
+    var newNodes = [];
+    if (window.els && window.els.length) {
+      window.els.forEach(function (el) {
+        newNodes.push({ id: el.id, type: el.type, label: el.name || el.type,
+          props: _extractProps(el), isMod: false });
+        var mods = el.mods || {};
+        Object.keys(mods).forEach(function (mk) {
+          newNodes.push({ id: el.id + '__mod__' + mk, type: mk, label: mk,
+            props: _extractModProps(mk, mods[mk]), isMod: true, modKey: mk, parentElId: el.id });
+        });
+      });
+    }
+
+    var existingIds = NE.nodes.map(function (n) { return n.id; });
+    var newIds      = newNodes.map(function (n) { return n.id; });
+
+    // Xóa node không còn tồn tại
+    var toRemove = existingIds.filter(function (id) { return newIds.indexOf(id) < 0; });
+    toRemove.forEach(function (id) {
+      var el = NE.nodeEls[id]; if (el && el.parentNode) el.remove();
+      delete NE.nodeEls[id];
+      NE.nodes = NE.nodes.filter(function (n) { return n.id !== id; });
+    });
+
+    // Thêm node mới
+    var toAdd = newNodes.filter(function (nn) { return existingIds.indexOf(nn.id) < 0; });
+    toAdd.forEach(function (nn) {
+      // Layout: đặt gần parent hoặc center
+      var parentId = nn.parentElId || (window.els && window.els.find(function (e) { return e.id === nn.id; }) || {}).parentId;
+      var parentNode = parentId ? _findNode(parentId) : null;
+      nn.x = parentNode ? parentNode.x + 210 : 200 + Math.random() * 100;
+      nn.y = parentNode ? parentNode.y + Math.random() * 60 - 30 : 100 + Math.random() * 200;
+      nn.vx = 0; nn.vy = 0;
+      NE.nodes.push(nn);
+      _makeNodeEl(nn, true);  // true = animate in
+    });
+
+    // Update props node đã có (label, props thay đổi) — rebuild body
+    newNodes.forEach(function (nn) {
+      var existing = _findNode(nn.id);
+      if (!existing) return;
+      // Update label + props
+      existing.label = nn.label;
+      existing.props = nn.props;
+      var nel = NE.nodeEls[nn.id]; if (!nel) return;
+      var body = nel.querySelector('.ne-nb'); if (!body) return;
+      body.innerHTML = '';
+      var keys = Object.keys(nn.props).slice(0, 5);
+      var col = nc(existing.type).col;
+      if (!keys.length) {
+        var emp = document.createElement('div');
+        emp.style.cssText = 'font-size:8.5px;opacity:.2;padding:2px 0';
+        emp.textContent = '(no props)'; body.appendChild(emp);
+      } else {
+        keys.forEach(function (k) {
+          var row = document.createElement('div'); row.className = 'ne-pr';
+          var pk = document.createElement('span'); pk.className = 'ne-pk'; pk.textContent = k;
+          var pv = document.createElement('span'); pv.className = 'ne-pv';
+          pv.style.color = col; pv.textContent = String(nn.props[k]).slice(0, 22);
+          row.appendChild(pk); row.appendChild(pv); body.appendChild(row);
+        });
+      }
+      // Update label text
+      var lbl = nel.querySelector('.ne-lbl');
+      if (lbl) lbl.textContent = existing.isMod ? existing.modKey : nn.label;
+    });
+
+    // Rebuild edges
+    NE.edges = [];
+    _buildEdges();
+    _updateCount();
+    neUpdateVis();
+  }
+
+  function _buildEdges() {
+    if (!window.els) return;
+    window.els.forEach(function (el) {
+      if (el.parentId && _findNode(el.parentId) && _findNode(el.id))
+        _addEdge(el.parentId, el.id, false);
+      var mods = el.mods || {};
+      Object.keys(mods).forEach(function (mk) {
+        var modId = el.id + '__mod__' + mk;
+        if (_findNode(modId) && _findNode(el.id))
+          _addEdge(modId, el.id, true);
+      });
+    });
+  }
+
+  function _updateCount() {
+    var cnt = document.getElementById('ne-count');
+    if (cnt) cnt.textContent = NE.nodes.length + ' nodes';
   }
 
   function _extractProps(el) {
@@ -452,9 +569,7 @@
     neUpdateVis();
   }
 
-  // ── MOUSE EVENTS ─────────────────────────────────────────────
-  // ★ KEY FIX: capture phase, guard NE.open + drag/conn
-  // Nếu không drag/conn → return ngay, app.js không bị ảnh hưởng
+  // ── MOUSE ────────────────────────────────────────────────────
   function _onMouseMove(e) {
     if (!NE.open || (!NE.drag && !NE.conn)) return;
     e.stopPropagation();
@@ -490,22 +605,48 @@
     NE.open = true;
     var ov = document.getElementById('ne-overlay');
     if (ov) ov.classList.add('open');
+    // Update nút toggle topbar
+    var btnTopbar = document.getElementById('btn-ne-toggle');
+    if (btnTopbar) btnTopbar.classList.add('active');
+    NE.lastElsHash = '';
     neSync();
     cancelAnimationFrame(NE.animId);
     _loop();
-    if (typeof toast === 'function') toast('\u29C1 Node Editor opened');
+    _startWatch();
+    if (typeof toast === 'function') toast('\u29C1 Node Editor ON');
   }
+
   function neClose() {
     NE.open = false; NE.drag = null; NE.conn = null;
     var ov = document.getElementById('ne-overlay');
     if (ov) ov.classList.remove('open');
+    var btnTopbar = document.getElementById('btn-ne-toggle');
+    if (btnTopbar) btnTopbar.classList.remove('active');
     cancelAnimationFrame(NE.animId);
-    if (typeof toast === 'function') toast('\u29C1 Node Editor closed');
+    _stopWatch();
+    if (typeof toast === 'function') toast('\u29C1 Node Editor OFF');
   }
 
-  window.neOpen  = neOpen;
-  window.neClose = neClose;
-  window.neSync  = neSync;
+  // Toggle — nút trên topbar gọi cái này
+  function neToggle() {
+    if (NE.open) neClose(); else neOpen();
+  }
+
+  window.neOpen   = neOpen;
+  window.neClose  = neClose;
+  window.neToggle = neToggle;
+  window.neSync   = neSync;
+
+  // Patch nút topbar: đổi onclick thành neToggle sau khi DOM ready
+  document.addEventListener('DOMContentLoaded', function () {
+    var btn = document.querySelector('button[onclick="neOpen()"]');
+    if (btn) { btn.id = 'btn-ne-toggle'; btn.setAttribute('onclick', 'neToggle()'); }
+  });
+  // Fallback nếu DOMContentLoaded đã chạy
+  (function () {
+    var btn = document.querySelector('button[onclick="neOpen()"]');
+    if (btn) { btn.id = 'btn-ne-toggle'; btn.setAttribute('onclick', 'neToggle()'); }
+  })();
 
   // Patch selEl để sync highlight
   var _origSelEl = window.selEl;
