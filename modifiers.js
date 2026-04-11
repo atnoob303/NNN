@@ -187,6 +187,18 @@ function renderPropsExtra(el, id) {
     );
   }
 
+  // ── Button Click Effect ──────────────────────────────────────
+  if (el.type === 'TextButton' || el.type === 'ImageButton') {
+    var curFx = el.btnFx || 'none';
+    h += modSec('🎯 Click Effect',
+      modSelect(id, 'Effect', 'btnFx',
+        ['none','bounce','ripple','particle'], curFx) +
+      '<div class="pr"><span class="pl">Preview</span>' +
+      '<button class="tbtn cy" style="flex:1;font-size:10px" ' +
+      'onclick="fxBtnPreview(\'' + id + '\')">▶ Run Preview</button></div>'
+    );
+  }
+
   return h;
 }
 
