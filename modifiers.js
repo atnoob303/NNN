@@ -24,16 +24,14 @@ function renderElExtra(el, d) {
       'padding:0 8px',
       'font-family:inherit',
       'cursor:text',
-      'pointer-events:none',   // click vẫn select element
+      'pointer-events:none',
     ].join(';');
-    // placeholder color via CSS custom property
     var phStyle = document.createElement('style');
     phStyle.textContent = '#' + el.id + ' input::placeholder { color: rgb('
       + _modRgb(el.phc || {r:90,g:90,b:120}) + '); }';
     d.appendChild(phStyle);
     d.appendChild(inp);
 
-    // badge
     var badge = document.createElement('div');
     badge.style.cssText = 'position:absolute;bottom:2px;right:4px;'
       + 'font-size:7px;color:#38bdf8;font-family:monospace;opacity:.6;pointer-events:none';
@@ -94,9 +92,85 @@ function renderElExtra(el, d) {
     badge.textContent = '✦ Highlight';
     d.appendChild(badge);
   }
+
+  // ── LiquidFrame ─────────────────────────────────────────────
+  if (el.type === 'LiquidFrame') {
+    var blur    = el.glassBlur    !== undefined ? el.glassBlur    : 8;
+    var noise   = el.glassNoise   !== undefined ? el.glassNoise   : 0.008;
+    var distort = el.glassDistort !== undefined ? el.glassDistort : 60;
+    var tint    = el.glassTint    || { r:255, g:255, b:255 };
+    var tintOp  = el.glassTintOp  !== undefined ? el.glassTintOp  : 0.08;
+    var rimOp   = el.glassRimOp   !== undefined ? el.glassRimOp   : 0.7;
+    var cr      = (el.mods && el.mods.UICorner ? el.mods.UICorner.cr : el.cr) || 30;
+
+    // Đảm bảo SVG filter tồn tại / cập nhật params
+    _liquidEnsureFilter(el.id, noise, distort);
+
+    // Nền trong suốt, không dùng background màu đặc
+    d.style.background  = 'transparent';
+    d.style.overflow    = 'hidden';
+    d.style.borderRadius = cr + 'px';
+
+    // ── Glass distortion layer (::after giả) ──────────────────
+    var glassLayer = document.createElement('div');
+    glassLayer.style.cssText = [
+      'position:absolute', 'inset:0', 'z-index:0',
+      'border-radius:' + cr + 'px',
+      'backdrop-filter:blur(' + blur + 'px)',
+      '-webkit-backdrop-filter:blur(' + blur + 'px)',
+      'filter:url(#lf-filter-' + el.id + ')',
+      '-webkit-filter:url(#lf-filter-' + el.id + ')',
+      'overflow:hidden',
+      'isolation:isolate',
+    ].join(';');
+    d.appendChild(glassLayer);
+
+    // ── Tint overlay ─────────────────────────────────────────
+    var tintLayer = document.createElement('div');
+    tintLayer.style.cssText = [
+      'position:absolute', 'inset:0', 'z-index:1',
+      'border-radius:' + cr + 'px',
+      'background:rgba(' + tint.r + ',' + tint.g + ',' + tint.b + ',' + tintOp + ')',
+      'pointer-events:none',
+    ].join(';');
+    d.appendChild(tintLayer);
+
+    // ── Rim light (inset shadow) ──────────────────────────────
+    var rimLayer = document.createElement('div');
+    rimLayer.style.cssText = [
+      'position:absolute', 'inset:0', 'z-index:2',
+      'border-radius:' + cr + 'px',
+      'box-shadow:inset 2px 2px 0px -2px rgba(255,255,255,' + rimOp + '),'
+               + 'inset 0 0 3px 1px rgba(255,255,255,' + (rimOp * 0.6).toFixed(2) + ')',
+      'pointer-events:none',
+    ].join(';');
+    d.appendChild(rimLayer);
+
+    // ── Content slot (children render trên glass) ─────────────
+    var contentSlot = document.createElement('div');
+    contentSlot.style.cssText = [
+      'position:absolute', 'inset:0', 'z-index:3',
+      'border-radius:' + cr + 'px',
+      'overflow:hidden',
+    ].join(';');
+    d.appendChild(contentSlot);
+
+    // ── Badge ─────────────────────────────────────────────────
+    var badge = document.createElement('div');
+    badge.style.cssText = [
+      'position:absolute', 'bottom:4px', 'right:6px', 'z-index:4',
+      'font-size:7px', 'color:rgba(255,255,255,.5)',
+      'font-family:monospace', 'pointer-events:none',
+      'letter-spacing:.5px',
+    ].join(';');
+    badge.textContent = '🫧 LiquidFrame';
+    d.appendChild(badge);
+  }
 }
 
-// Helper nội bộ
+// ════════════════════════════════════════════════════════════════
+// §MOD-HELPERS nội bộ
+// ════════════════════════════════════════════════════════════════
 function _modRgb(c) {
   if (!c) return '226,226,240';
   return Math.round(c.r||0)+','+Math.round(c.g||0)+','+Math.round(c.b||0);
@@ -133,7 +207,7 @@ function renderPropsExtra(el, id) {
     var so = el.studOffset || {x:0,y:1,z:0};
     h += modSec('📌 BillboardGui',
       '<div class="pr"><span class="pl">Size (studs)</span></div>' +
-      modNr(id, 'Width',  'sz.x', 0.5, 50, sz.x, 0.5, function(v){ return 'szX'; }) +
+      modNr(id, 'Width',  'sz.x', 0.5, 50, sz.x, 0.5) +
       modNr(id, 'Height', 'sz.y', 0.5, 50, sz.y, 0.5) +
       '<div class="pr"><span class="pl">StudsOffset</span></div>' +
       modNr(id, 'X', 'studOffset.x', -20, 20, so.x, 0.1) +
@@ -187,7 +261,21 @@ function renderPropsExtra(el, id) {
     );
   }
 
-// ── Button Click Effect ──────────────────────────────────────
+  // ── LiquidFrame ──────────────────────────────────────────────
+  if (el.type === 'LiquidFrame') {
+    h += modSec('🫧 LiquidFrame — Liquid Glass',
+      modNr(id, 'Blur (px)',      'glassBlur',    0,   30,   el.glassBlur    !== undefined ? el.glassBlur    : 8,    0.5) +
+      modNr(id, 'Noise freq',     'glassNoise',   0,   0.05, el.glassNoise   !== undefined ? el.glassNoise   : 0.008, 0.001) +
+      modNr(id, 'Distort scale',  'glassDistort', 0,   120,  el.glassDistort !== undefined ? el.glassDistort : 60,   1) +
+      modNr(id, 'Tint opacity',   'glassTintOp',  0,   1,    el.glassTintOp  !== undefined ? el.glassTintOp  : 0.08, 0.01) +
+      modCr(id, 'Tint color',     'glassTint',    el.glassTint || {r:255,g:255,b:255}) +
+      modNr(id, 'Rim opacity',    'glassRimOp',   0,   1,    el.glassRimOp   !== undefined ? el.glassRimOp   : 0.7,  0.01) +
+      modTr(id, 'Bg image URL',   'glassBg',      el.glassBg || '') +
+      '<div class="pr" style="font-size:9px;color:var(--cy)">💡 Đặt LiquidFrame lên ảnh nền để thấy hiệu ứng glass</div>'
+    );
+  }
+
+  // ── Button Click Effect ──────────────────────────────────────
   if (el.type === 'TextButton' || el.type === 'ImageButton') {
     var curFx = el.btnFx || 'none';
     var fxParams = '';
@@ -204,7 +292,6 @@ function renderPropsExtra(el, id) {
     }
 
     if (curFx === 'particle') {
-      // Tính preview auto params để hiển thị cho user biết
       var domEl  = document.getElementById(el.id);
       var btnW   = domEl ? domEl.offsetWidth  : (el.soW || 120);
       var btnH   = domEl ? domEl.offsetHeight : (el.soH || 36);
@@ -217,7 +304,7 @@ function renderPropsExtra(el, id) {
       var autoSize  = Math.max(8,  Math.min(Math.round(18 * Math.sqrt(ratio)), 40));
 
       fxParams =
-        modNr(id, 'Base hạt',   'btnFxCount', 5,    30,   el.btnFxCount||15) +
+        modNr(id, 'Base hạt',    'btnFxCount', 5,    30,   el.btnFxCount||15) +
         modNr(id, 'Base tầm bay','btnFxDist',  20,   200,  el.btnFxDist||90)  +
         modNr(id, 'Tốc độ (ms)','btnFxSpeed', 400,  2000, el.btnFxSpeed||1200) +
         '<div class="pr" style="flex-direction:column;align-items:flex-start;gap:2px">' +
@@ -246,7 +333,6 @@ function renderPropsExtra(el, id) {
 // ════════════════════════════════════════════════════════════════
 function renderModExtra(el, id, mk, md) {
   var h = '';
-  var mv = mk;
 
   if (mk === 'UIBlurEffect')
     h += modMr(id, mk, 'size', 'BlurSize', 0, 56, md.size||24) +
@@ -285,8 +371,7 @@ function renderModExtra(el, id, mk, md) {
 }
 
 // ════════════════════════════════════════════════════════════════
-// §MOD-4  HELPER HTML — clones từ app.js nhưng prefix "mod"
-//         để không xung đột namespace
+// §MOD-4  HELPER HTML
 // ════════════════════════════════════════════════════════════════
 
 function modSec(title, content) {
@@ -296,7 +381,7 @@ function modSec(title, content) {
 
 function modNr(id, lb, k, mn, mx, v, st) {
   st = st || 1;
-  var dp = st < 1 ? 2 : 0;
+  var dp = st < 1 ? (st < 0.01 ? 3 : 2) : 0;
   var lid = 'MX' + k.replace(/\W/g,'_') + id;
   return '<div class="pr"><span class="pl">' + lb + '</span>'
        + '<input type="range" class="pi" min="' + mn + '" max="' + mx + '" step="' + st + '" value="' + v + '" style="flex:1"'
@@ -309,7 +394,8 @@ function modCr(id, lb, k, v) {
   var hex = _modR2h(v);
   return '<div class="pr"><span class="pl">' + lb + '</span>'
        + '<input type="color" class="pi" value="' + hex + '"'
-       + ' oninput="psr(\'' + id + '\',\'' + k + '\',this.value)"/></div>';
+       + ' oninput="psr(\'' + id + '\',\'' + k + '\',this.value);'
+       + 'var e=getEl(\'' + id + '\');if(e)renderEl(e)"/></div>';
 }
 
 function modTr(id, lb, k, v) {
@@ -366,10 +452,91 @@ function modMck(id, mk, k, lb, v) {
        + 'var e=getEl(\'' + id + '\');if(e){renderEl(e);renderProps();}"/></div>';
 }
 
-// r2h helper nội bộ (tránh phụ thuộc app.js)
 function _modR2h(c) {
   if (!c) return '#313244';
   return '#' + [c.r||0, c.g||0, c.b||0]
     .map(function(x) { return Math.round(x).toString(16).padStart(2,'0'); })
     .join('');
+}
+
+// ════════════════════════════════════════════════════════════════
+// §MOD-5  LIQUID GLASS FILTER MANAGER
+// Tạo / cập nhật / xoá SVG <filter> cho từng LiquidFrame instance
+// ════════════════════════════════════════════════════════════════
+
+function _liquidEnsureFilter(elId, noise, distort) {
+  noise   = (noise   !== undefined) ? noise   : 0.008;
+  distort = (distort !== undefined) ? distort : 60;
+
+  var filterId = 'lf-filter-' + (elId || 'default');
+  var svgNS    = 'http://www.w3.org/2000/svg';
+
+  // Lấy hoặc tạo container SVG ẩn
+  var svg = document.getElementById('_liquid-svg-defs');
+  if (!svg) {
+    svg = document.createElementNS(svgNS, 'svg');
+    svg.id = '_liquid-svg-defs';
+    svg.setAttribute('style',
+      'display:none;position:absolute;width:0;height:0;overflow:hidden');
+    document.body.appendChild(svg);
+  }
+
+  var defs = svg.querySelector('defs');
+  if (!defs) {
+    defs = document.createElementNS(svgNS, 'defs');
+    svg.appendChild(defs);
+  }
+
+  // Nếu filter đã tồn tại → chỉ cập nhật params
+  var existing = document.getElementById(filterId);
+  if (existing) {
+    var turb = existing.querySelector('feTurbulence');
+    var disp = existing.querySelector('feDisplacementMap');
+    if (turb) turb.setAttribute('baseFrequency', noise + ' ' + noise);
+    if (disp) disp.setAttribute('scale', distort);
+    return;
+  }
+
+  // Tạo filter mới
+  var filter = document.createElementNS(svgNS, 'filter');
+  filter.id = filterId;
+  filter.setAttribute('x', '0%');
+  filter.setAttribute('y', '0%');
+  filter.setAttribute('width',  '100%');
+  filter.setAttribute('height', '100%');
+
+  // feTurbulence — noise fractal
+  var turb = document.createElementNS(svgNS, 'feTurbulence');
+  turb.setAttribute('type',          'fractalNoise');
+  turb.setAttribute('baseFrequency', noise + ' ' + noise);
+  turb.setAttribute('numOctaves',    '2');
+  turb.setAttribute('seed',          '92');
+  turb.setAttribute('result',        'noise');
+
+  // feGaussianBlur — làm mịn noise (giữ nguyên như reference)
+  var blurNoise = document.createElementNS(svgNS, 'feGaussianBlur');
+  blurNoise.setAttribute('in',           'noise');
+  blurNoise.setAttribute('stdDeviation', '0.02');
+  blurNoise.setAttribute('result',       'blurredNoise');
+
+  // feDisplacementMap — bẻ cong ảnh nền
+  var disp = document.createElementNS(svgNS, 'feDisplacementMap');
+  disp.setAttribute('in',               'SourceGraphic');
+  disp.setAttribute('in2',              'blurredNoise');
+  disp.setAttribute('scale',            distort);
+  disp.setAttribute('xChannelSelector', 'R');
+  disp.setAttribute('yChannelSelector', 'G');
+
+  filter.appendChild(turb);
+  filter.appendChild(blurNoise);
+  filter.appendChild(disp);
+  defs.appendChild(filter);
+}
+
+// Gọi khi xoá LiquidFrame element để dọn filter
+function _liquidCleanupFilter(elId) {
+  var svg = document.getElementById('_liquid-svg-defs');
+  if (!svg) return;
+  var f = document.getElementById('lf-filter-' + elId);
+  if (f && f.parentNode) f.parentNode.removeChild(f);
 }
