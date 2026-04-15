@@ -4,7 +4,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 // ── VERSION ─────────────────────────────────────────────────────
-var VERSION = 'Alpha 0.0.6.23';
+var VERSION = 'Alpha 0.0.6.24';
 
 // ── FONTS ───────────────────────────────────────────────────────
 var FONTS = [
@@ -33,6 +33,7 @@ var COL = {
   SelectionBox:   '#f43f5e',
   Highlight:      '#e879f9',
   LiquidFrame:    '#22d3ee',
+  GlassButton:    '#a5f3fc',
 };
 
 // ── KÍCH THƯỚC MẶC ĐỊNH KHI VẼ ──────────────────────────────────
@@ -43,7 +44,7 @@ var DW = {
   // Thêm mới
   TextBox:180, BillboardGui:200, SurfaceGui:200,
   SelectionBox:120, Highlight:120,
-  LiquidFrame:200,
+  LiquidFrame:200, GlassButton:70,
 };
 var DH = {
   TextLabel:32, TextButton:36, ImageLabel:100, ImageButton:100,
@@ -52,7 +53,7 @@ var DH = {
   // Thêm mới
   TextBox:36, BillboardGui:120, SurfaceGui:120,
   SelectionBox:120, Highlight:120,
-  LiquidFrame:160,
+  LiquidFrame:160, GlassButton:70,
 };
 
 // ── HÀM TẠO UDim2 GỌN ──────────────────────────────────────────
@@ -142,8 +143,21 @@ var DEFS = {
     btnFxSpeed: 1200,
   },
 
-  // ── MỚI: TextBox ────────────────────────────────────────────
-  TextBox: {
+  // ── MỚI: GlassButton ────────────────────────────────────────
+  GlassButton: {
+    ...mkU(0,40,0,50,0,70,0,70),
+    bc:{r:255,g:255,b:255}, bdc:{r:255,g:255,b:255}, bdw:0, cr:9999,
+    op:1, zi:0, vis:true, rot:0, mods:{},
+    // GlassButton-specific
+    glassBlur:    0,
+    glassNoise:   0.008,
+    glassDistort: 60,
+    glassTintOp:  0.1,
+    glassRimOp:   0.7,
+    icon:         '☀',
+  },
+
+  // ── MỚI: TextBox ────────────────────────────────────────────  TextBox: {
     ...mkU(0,40,0,50,0,180,0,36),
     bc:{r:22,g:22,b:38}, bdc:{r:56,g:189,b:248}, bdw:1, cr:6,
     op:1, zi:0, vis:true, rot:0, mods:{},
@@ -351,6 +365,7 @@ var COMPONENT_GROUPS = [
       { type:'TextButton',  icon:'⊡', color:'#f472b6' },
       { type:'ImageButton', icon:'🔘', color:'#fb7185' },
       { type:'TextBox',     icon:'✎', color:'#38bdf8', badge:'New' },
+      { type:'GlassButton', icon:'⬤', color:'#a5f3fc', badge:'New' },
     ],
   },
   {
