@@ -4,7 +4,7 @@
 // ═══════════════════════════════════════════════════════════════
 
 // ── VERSION ─────────────────────────────────────────────────────
-var VERSION = 'Alpha 0.0.6.22';
+var VERSION = 'Alpha 0.0.6.23';
 
 // ── FONTS ───────────────────────────────────────────────────────
 var FONTS = [
@@ -32,6 +32,7 @@ var COL = {
   SurfaceGui:     '#a3e635',
   SelectionBox:   '#f43f5e',
   Highlight:      '#e879f9',
+  LiquidFrame:    '#22d3ee',
 };
 
 // ── KÍCH THƯỚC MẶC ĐỊNH KHI VẼ ──────────────────────────────────
@@ -42,6 +43,7 @@ var DW = {
   // Thêm mới
   TextBox:180, BillboardGui:200, SurfaceGui:200,
   SelectionBox:120, Highlight:120,
+  LiquidFrame:200,
 };
 var DH = {
   TextLabel:32, TextButton:36, ImageLabel:100, ImageButton:100,
@@ -50,6 +52,7 @@ var DH = {
   // Thêm mới
   TextBox:36, BillboardGui:120, SurfaceGui:120,
   SelectionBox:120, Highlight:120,
+  LiquidFrame:160,
 };
 
 // ── HÀM TẠO UDim2 GỌN ──────────────────────────────────────────
@@ -207,6 +210,21 @@ var DEFS = {
     enabled:true,
     adornee:'',
   },
+
+  // ── MỚI: LiquidFrame (iOS 26 Liquid Glass effect) ────────────
+  LiquidFrame: {
+    ...mkU(0,40,0,50,0,200,0,160),
+    bc:{r:255,g:255,b:255}, bdc:{r:255,g:255,b:255}, bdw:0, cr:30,
+    op:1, zi:0, vis:true, rot:0, mods:{},
+    // LiquidFrame-specific
+    glassBlur:    8,          // backdrop blur intensity (px)
+    glassNoise:   0.008,      // feTurbulence baseFrequency
+    glassDistort: 60,         // feDisplacementMap scale
+    glassTint:    {r:255,g:255,b:255}, // tint overlay
+    glassTintOp:  0.08,       // tint opacity
+    glassRimOp:   0.7,        // rim light opacity
+    glassBg:      '',         // background image URL (tuỳ chọn)
+  },
 };
 
 // ════════════════════════════════════════════════════════════════
@@ -317,6 +335,7 @@ var COMPONENT_GROUPS = [
       { type:'ViewportFrame',  icon:'📦', color:'#60a5fa', badge:'3D' },
       { type:'VideoFrame',     icon:'▶', color:'#f59e0b' },
       { type:'ScreenGui',      icon:'⊡', color:'#22d3ee', badge:'Root' },
+      { type:'LiquidFrame',    icon:'🫧', color:'#22d3ee', badge:'New' },
     ],
   },
   {
